@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Playbox",
+    "slug": "turfos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#1A1916"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/06b03888-4400-44b3-89a1-f6142aa113aa",
+      "enabled": true,
+      "checkAutomatically": "ON_ERROR_RECOVERY"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1A6B45"
+      },
+      "package": "com.playbox.turf"
+    },
+    "ios": {
+      "bundleIdentifier": "com.playbox.turf"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon.png",
+      "name": "Playbox",
+      "shortName": "Playbox",
+      "themeColor": "#8B5CF6",
+      "backgroundColor": "#0A0814"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "06b03888-4400-44b3-89a1-f6142aa113aa"
+      }
+    },
+    "owner": "punto7xs-organization"
+  }
+}

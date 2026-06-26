@@ -1,0 +1,38 @@
+TurfOS/
+├── app.json
+├── App.tsx
+├── src/
+│   ├── theme/
+│   │   └── theme.ts
+│   ├── store/
+│   │   └── useStore.ts
+│   ├── data/
+│   │   └── mockData.ts
+│   ├── types/
+│   │   └── index.ts
+│   ├── components/
+│   │   ├── StatCard.tsx
+│   │   ├── StatusChip.tsx
+│   │   ├── Avatar.tsx
+│   │   ├── SectionHeader.tsx
+│   │   ├── ListItem.tsx
+│   │   ├── EmptyState.tsx
+│   │   └── Toast.tsx
+│   ├── navigation/
+│   │   ├── RootNavigator.tsx
+│   │   ├── DrawerNavigator.tsx
+│   │   └── TabNavigator.tsx
+│   └── screens/
+│       ├── LoginScreen.tsx
+│       ├── DashboardScreen.tsx
+│       ├── BookingsScreen.tsx
+│       ├── BookingDetailScreen.tsx
+│       ├── NewBookingScreen.tsx
+│       ├── CalendarScreen.tsx
+│       ├── CustomersScreen.tsx
+│       ├── CustomerDetailScreen.tsx
+│       ├── POSScreen.tsx
+│       ├── CreditScreen.tsx
+│       ├── InventoryScreen.tsx
+│       ├── ReportsScreen.tsx
+│       └── SettingsScreen.tsx

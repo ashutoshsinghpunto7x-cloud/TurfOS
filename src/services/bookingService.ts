@@ -7,6 +7,11 @@ export interface BookingSlot {
   customer: string;
   phone: string;
   slot: string;
+  /** Slot label adjusted for display on the calendar day it's shown under.
+   *  Same as `slot` except for a cross-midnight booking carried into the next
+   *  day's view, where the start is shown as 12:00 AM instead of repeating
+   *  the previous day's start time (e.g. "12:00 AM–01:00 AM" not "11:00 PM–01:00 AM"). */
+  displaySlot: string;
   turf: string;
   field: string;
   booking_date: string;
@@ -177,12 +182,13 @@ export function buildBookedSet(bookings: BookingSlot[]): Set<string> {
 
 // ── Row mappers ────────────────────────────────────────────────────────────
 
-function toBookingSlot(row: any): BookingSlot {
+function toBookingSlot(row: any, displaySlot?: string): BookingSlot {
   return {
     id:                  row.id,
     customer:            row.customer,
     phone:               row.phone ?? '',
     slot:                row.slot,
+    displaySlot:         displaySlot ?? row.slot,
     turf:                row.turf ?? row.field ?? 'Turf A',
     field:               row.field ?? row.turf ?? 'Turf A',
     booking_date:        row.booking_date,
@@ -246,7 +252,20 @@ export async function fetchBookingsForDate(params: {
     return parsed !== null && parsed.endM > 0 && parsed.endM < 6 * 60;
   });
 
-  return { bookings: [...(data ?? []), ...crossMidnight].map(toBookingSlot), error: null };
+  return {
+    bookings: [
+      ...(data ?? []).map((row: any) => toBookingSlot(row)),
+      // Displayed as starting at 12:00 AM on today's view — the booking itself still
+      // stores its true original start time (e.g. 11:00 PM) in `slot`, unchanged.
+      ...crossMidnight.map((row: any) => {
+        const parsed = parseSlotRange(row.slot);
+        const endH   = Math.floor((parsed?.endM ?? 0) / 60);
+        const endM   = (parsed?.endM ?? 0) % 60;
+        return toBookingSlot(row, buildSlotLabel(0, 0, endH, endM));
+      }),
+    ],
+    error: null,
+  };
 }
 
 export async function fetchCurrentBooking(turf: string): Promise<{
@@ -296,7 +315,7 @@ export async function fetchBookingsEndingSoon(turf: string, withinMinutes = 6): 
     return diff > 0 && diff <= withinMinutes;
   });
 
-  return { bookings: endingSoon.map(toBookingSlot), error: null };
+  return { bookings: endingSoon.map((row: any) => toBookingSlot(row)), error: null };
 }
 
 export async function createBooking(params: CreateBookingParams): Promise<{

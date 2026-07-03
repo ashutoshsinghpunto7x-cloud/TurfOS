@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Alert, TextInput,
@@ -79,34 +79,54 @@ const DURATIONS = [
 // ─── Drum Picker ──────────────────────────────────────────────────────────────
 const DRUM_H = 46;
 
-function Drum({ items, selected, onSelect, width = 76 }: {
+const Drum = React.memo(function Drum({ items, selected, onSelect, width = 76 }: {
   items: (string | number)[]; selected: string | number;
   onSelect: (v: string | number) => void; width?: number;
 }) {
-  const ref      = useRef<RNScrollView>(null);
-  const dragging = useRef(false);
-  const [internal, setInternal] = useState(selected);
+  const ref         = useRef<RNScrollView>(null);
+  const dragging    = useRef(false);
+  const hasMomentum = useRef(false);
 
-  useEffect(() => {
-    const idx = items.indexOf(selected);
-    if (idx >= 0) setTimeout(() => ref.current?.scrollTo({ y: idx * DRUM_H, animated: false }), 80);
+  const itemsRef    = useRef(items);
+  const selectedRef = useRef(selected);
+  const onSelectRef = useRef(onSelect);
+  itemsRef.current    = items;
+  selectedRef.current = selected;
+  onSelectRef.current = onSelect;
+
+  const [internal, setInternal] = useState(selected);
+  const internalRef = useRef(selected);
+
+  // Explicit snap targets — no ambiguity at high speed unlike snapToInterval+padding
+  const snapOffsets = useMemo(() => items.map((_, i) => i * DRUM_H), [items]);
+
+  const snap = useCallback((rawY: number) => {
+    const its = itemsRef.current;
+    const idx = Math.max(0, Math.min(its.length - 1, Math.round(rawY / DRUM_H)));
+    const val = its[idx];
+    if (val === undefined) return;
+    // animated:false avoids starting a new momentum event that re-triggers this callback
+    ref.current?.scrollTo({ y: idx * DRUM_H, animated: false });
+    if (val !== internalRef.current) {
+      internalRef.current = val;
+      setInternal(val);
+    }
+    if (val !== selectedRef.current) onSelectRef.current(val);
   }, []);
 
   useEffect(() => {
-    if (!dragging.current && selected !== internal) {
+    const idx = items.indexOf(selected);
+    if (idx >= 0) setTimeout(() => ref.current?.scrollTo({ y: idx * DRUM_H, animated: false }), 50);
+  }, []);
+
+  useEffect(() => {
+    if (!dragging.current && !hasMomentum.current && selected !== internalRef.current) {
+      internalRef.current = selected;
       setInternal(selected);
       const idx = items.indexOf(selected);
-      // Use animated:false so programmatic jumps don't fire onMomentumScrollEnd
-      // which would call onSelect with the wrong handler after mode switch
-      if (idx >= 0) ref.current?.scrollTo({ y: idx * DRUM_H, animated: false });
+      if (idx >= 0) ref.current?.scrollTo({ y: idx * DRUM_H, animated: true });
     }
   }, [selected]);
-
-  const snap = (y: number) => {
-    const idx = Math.max(0, Math.min(items.length - 1, Math.round(y / DRUM_H)));
-    const val = items[idx];
-    if (val !== undefined) { setInternal(val); if (val !== selected) onSelect(val); else ref.current?.scrollTo({ y: idx * DRUM_H, animated: true }); }
-  };
 
   return (
     <View style={{ width, height: DRUM_H * 3, overflow: 'hidden' }}>
@@ -117,16 +137,37 @@ function Drum({ items, selected, onSelect, width = 76 }: {
         style={{ position: 'absolute', top: 0, left: 0, right: 0, height: DRUM_H, zIndex: 2 }} pointerEvents="none" />
       <LinearGradient colors={['rgba(250,250,252,0)', T.bg]}
         style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: DRUM_H, zIndex: 2 }} pointerEvents="none" />
-      <RNScrollView ref={ref} showsVerticalScrollIndicator={false} snapToInterval={DRUM_H}
-        decelerationRate="fast" nestedScrollEnabled
-        onScrollBeginDrag={() => { dragging.current = true; }}
-        onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => { dragging.current = false; snap(e.nativeEvent.contentOffset.y); }}
-        onScrollEndDrag={(e: NativeSyntheticEvent<NativeScrollEvent>) => { if (e.nativeEvent.velocity && Math.abs(e.nativeEvent.velocity.y) > 0.1) return; dragging.current = false; snap(e.nativeEvent.contentOffset.y); }}
-        scrollEventThrottle={16} contentContainerStyle={{ paddingVertical: DRUM_H }}>
+
+      <RNScrollView
+        ref={ref}
+        showsVerticalScrollIndicator={false}
+        snapToOffsets={snapOffsets}
+        decelerationRate="fast"
+        nestedScrollEnabled
+        bounces={false}
+        removeClippedSubviews={false}
+        onScrollBeginDrag={() => {
+          dragging.current = true;
+          hasMomentum.current = false;
+        }}
+        onMomentumScrollBegin={() => { hasMomentum.current = true; }}
+        onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+          dragging.current = false;
+          hasMomentum.current = false;
+          snap(e.nativeEvent.contentOffset.y);
+        }}
+        onScrollEndDrag={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+          const vy = e.nativeEvent.velocity?.y ?? 0;
+          if (Math.abs(vy) > 0.1) return;
+          dragging.current = false;
+          snap(e.nativeEvent.contentOffset.y);
+        }}
+        contentContainerStyle={{ paddingVertical: DRUM_H }}
+      >
         {items.map((item, i) => {
           const isSel = item === internal;
           return (
-            <View key={String(item) + i} style={{ height: DRUM_H, alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+            <View key={`${String(item)}_${i}`} style={{ height: DRUM_H, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ fontSize: isSel ? 24 : 16, fontWeight: isSel ? '800' : '500', color: isSel ? T.white : T.textDis, fontVariant: ['tabular-nums'], letterSpacing: isSel ? -0.5 : 0 }}>
                 {typeof item === 'number' ? String(item).padStart(2, '0') : item}
               </Text>
@@ -136,7 +177,7 @@ function Drum({ items, selected, onSelect, width = 76 }: {
       </RNScrollView>
     </View>
   );
-}
+});
 
 // ─── Animated Date Card ───────────────────────────────────────────────────────
 function DateCard({ date, label, isSelected, onPress }: { date: Date; label: string; isSelected: boolean; onPress: () => void }) {
@@ -179,7 +220,7 @@ const dc = StyleSheet.create({
 
 // ─── Inline Current Booking Card ──────────────────────────────────────────────
 function CurrentBookingCard({ booking, expired, onPressPOS, onPressInvoice }: {
-  booking: { id: string; customer: string; slot: string; sport?: string };
+  booking: { id: string; customer: string; slot: string; sport?: string | null };
   expired: boolean;
   onPressPOS: () => void;
   onPressInvoice: () => void;
@@ -226,21 +267,21 @@ export default function StaffBookingScreen() {
   const [calModal, setCalModal] = useState(false);
   const [calYear,  setCalYear]  = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
-  const [custName,  setCustName]  = useState(profile?.full_name ?? '');
-  const [custPhone, setCustPhone] = useState('');
+  const custName  = profile?.full_name ?? '';
+  const custPhone = '';
 
   // ── Slot detail modal ───────────────────────────────────────────────────────
   const [chipDetail, setChipDetail] = useState<{
     id: string; slot: string; customer: string; phone: string | null;
     turf: string; sport: string | null; amount: number; status: string;
   } | null>(null);
-  const [chipLoading, setChipLoading]       = useState(false);
-  const [editSlotTxt, setEditSlotTxt]       = useState('');
+  const [chipLoading, setChipLoading]           = useState(false);
+  const [editSlotTxt, setEditSlotTxt]           = useState('');
   const [editChipCustomer, setEditChipCustomer] = useState('');
-  const [editChipPhone, setEditChipPhone]   = useState('');
-  const [editChipAmount, setEditChipAmount] = useState('');
-  const [editChipStatus, setEditChipStatus] = useState('');
-  const [savingSlot, setSavingSlot]         = useState(false);
+  const [editChipPhone, setEditChipPhone]       = useState('');
+  const [editChipAmount, setEditChipAmount]     = useState('');
+  const [editChipStatus, setEditChipStatus]     = useState('');
+  const [savingSlot, setSavingSlot]             = useState(false);
 
   const openChipDetail = async (id: string) => {
     setChipLoading(true);
@@ -251,12 +292,7 @@ export default function StaffBookingScreen() {
       .eq('id', id)
       .single();
     if (data) {
-      setChipDetail({
-        id: data.id, slot: data.slot ?? '', customer: data.customer ?? '—',
-        phone: data.phone ?? null, turf: data.turf ?? 'Turf A',
-        sport: data.sport ?? null, amount: Number(data.amount ?? 0),
-        status: data.status,
-      });
+      setChipDetail({ id: data.id, slot: data.slot ?? '', customer: data.customer ?? '—', phone: data.phone ?? null, turf: data.turf ?? 'Turf A', sport: data.sport ?? null, amount: Number(data.amount ?? 0), status: data.status });
       setEditSlotTxt(data.slot ?? '');
       setEditChipCustomer(data.customer ?? '');
       setEditChipPhone(data.phone ?? '');
@@ -302,7 +338,6 @@ export default function StaffBookingScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Set initial end = start + 1 hr
     const h24 = to24h(initStart.h12, initStart.per);
     const total = h24 * 60 + screen.startM + 60;
     screen.setEndH(Math.floor(total / 60) % 24);
@@ -310,33 +345,49 @@ export default function StaffBookingScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
 
-  // Start handlers — only change start, never touch end
-  const handleStartH12 = (v: string | number) => { const h = v as number; setStartH12(h); screen.setStartH(to24h(h, startPer)); };
-  const handleStartMin = (v: string | number) => { const m = v as number; setStartMin(m); screen.setStartM(m); };
-  const handleStartPer = (v: string | number) => { const per = v as 'AM' | 'PM'; setStartPer(per); screen.setStartH(to24h(startH12, per)); };
+  // Stable refs so useCallback deps don't change on every render
+  const startPerRef = useRef(startPer);
+  const startH12Ref = useRef(startH12);
+  const startMinRef = useRef(startMin);
+  startPerRef.current = startPer;
+  startH12Ref.current = startH12;
+  startMinRef.current = startMin;
 
-  // Duration pills — set end = start + duration
-  const handleDuration = (dur: number) => {
-    const total = to24h(startH12, startPer) * 60 + startMin + dur;
-    screen.setEndH(Math.floor(total / 60) % 24);
-    screen.setEndM(total % 60);
-  };
+  const handleStartH12 = useCallback((v: string | number) => {
+    const h = v as number;
+    setStartH12(h);
+    screen.setStartH(to24h(h, startPerRef.current));
+  }, []);
+  const handleStartMin = useCallback((v: string | number) => {
+    const m = v as number;
+    setStartMin(m);
+    screen.setStartM(m);
+  }, []);
+  const handleStartPer = useCallback((v: string | number) => {
+    const per = v as 'AM' | 'PM';
+    setStartPer(per);
+    screen.setStartH(to24h(startH12Ref.current, per));
+  }, []);
 
-  // End display comes directly from hook state — independent of start
   const endDisp12     = to12h(screen.endH);
   const endMinDisplay = screen.endM;
 
-  // Derive active duration pill from actual start/end difference
+  const endDisp12Ref = useRef(endDisp12);
+  endDisp12Ref.current = endDisp12;
+
   const startTotalM = to24h(startH12, startPer) * 60 + startMin;
   const endTotalM   = screen.endH * 60 + screen.endM;
-  const computedDur = endTotalM >= startTotalM
-    ? endTotalM - startTotalM
-    : endTotalM + 1440 - startTotalM;
+  const computedDur = endTotalM >= startTotalM ? endTotalM - startTotalM : endTotalM + 1440 - startTotalM;
 
-  // End handlers — set end directly, never touch start
-  const handleEndH12 = (v: string | number) => { screen.setEndH(to24h(v as number, endDisp12.per)); };
-  const handleEndMin = (v: string | number) => { screen.setEndM(v as number); };
-  const handleEndPer = (v: string | number) => { screen.setEndH(to24h(endDisp12.h12, v as 'AM' | 'PM')); };
+  const handleEndH12 = useCallback((v: string | number) => { screen.setEndH(to24h(v as number, endDisp12Ref.current.per)); }, []);
+  const handleEndMin = useCallback((v: string | number) => { screen.setEndM(v as number); }, []);
+  const handleEndPer = useCallback((v: string | number) => { screen.setEndH(to24h(endDisp12Ref.current.h12, v as 'AM' | 'PM')); }, []);
+
+  const handleDuration = useCallback((dur: number) => {
+    const total = to24h(startH12Ref.current, startPerRef.current) * 60 + startMinRef.current + dur;
+    screen.setEndH(Math.floor(total / 60) % 24);
+    screen.setEndM(total % 60);
+  }, []);
 
   const calDaysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const calFirstDay    = new Date(calYear, calMonth, 1).getDay();
@@ -376,183 +427,149 @@ export default function StaffBookingScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* ── Scrollable body (keyboard-safe) ── */}
-            <ScrollView
-              style={{ flex: 1 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 16 }}
-            >
+            <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
 
-            {/* ── Date Strip ── */}
-            <View style={s.dateStrip}>
-              {days.map((d, i) => (
-                <DateCard key={toISO(d)} date={d} label={fmtDow(d, i)}
-                  isSelected={toISO(d) === toISO(screen.selectedDate)}
-                  onPress={() => screen.setSelectedDate(d)} />
-              ))}
-              <TouchableOpacity style={s.moreBtn} onPress={() => setCalModal(true)} activeOpacity={0.8}>
-                <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={s.moreBadge}>
-                  <Text style={s.moreBadgeMon}>{selMonth}</Text>
-                  <Text style={s.moreBadgeDay}>{selDay}</Text>
-                </LinearGradient>
-                <Text style={s.moreLabel}>More</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Current Booking ── */}
-            {screen.currentBooking && (
-              <View style={s.px}>
-                <CurrentBookingCard
-                  booking={screen.currentBooking}
-                  expired={expired}
-                  onPressPOS={() => navigation.navigate('StaffSales', { bookingId: screen.currentBooking!.id, bookingCustomer: screen.currentBooking!.customer } as any)}
-                  onPressInvoice={() => navigation.navigate('Bill', { bookingId: screen.currentBooking!.id } as any)}
-                />
-              </View>
-            )}
-
-            {/* ── Booked chips ── */}
-            {screen.loadingSlots ? (
-              <View style={s.chipRow}><ActivityIndicator size="small" color={T.grad0} /></View>
-            ) : screen.bookings.length === 0 && screen.activeHolds.length === 0 ? (
-              <View style={s.chipRow}>
-                <View style={s.allClear}><Text style={s.allClearTxt}>✓  All slots available</Text></View>
-              </View>
-            ) : (
-              <View style={s.chipBlock}>
-                <Text style={s.chipLabel}>Booked:</Text>
-                <View style={s.chipWrap}>
-                  {screen.bookings.map((b, i) => (
-                    <TouchableOpacity
-                      key={`b-${b.id}-${i}`}
-                      style={s.bookedChip}
-                      activeOpacity={0.75}
-                      onPress={() => openChipDetail(b.id)}
-                    >
-                      <Text style={s.bookedChipTxt}>{b.slot}</Text>
-                    </TouchableOpacity>
-                  ))}
-                  {screen.activeHolds.map((h, i) => (
-                    <View key={`h-${i}`} style={s.holdChip}><Text style={s.holdChipTxt}>⏳ {h.slotLabel}</Text></View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* ── Hold banner ── */}
-            {screen.holdState.holdId && screen.holdState.expiresAt && (
-              <View style={s.px}><SlotHoldBanner queuePos={screen.holdState.queuePos} expiresAt={screen.holdState.expiresAt} /></View>
-            )}
-            {!screen.holdState.holdId && (() => {
-              const hold = screen.activeHolds.find((h) => h.slotLabel === screen.slotLabel);
-              if (!hold) return null;
-              return <View style={s.px}><SlotHoldBanner queuePos={hold.queueCount + 1} expiresAt={new Date(hold.expiresAt)} /></View>;
-            })()}
-
-            {/* ── Time Picker ── */}
-            <View style={s.sectionRow}>
-              <View style={s.sectionDot} />
-              <Text style={s.sectionLabel}>{endTimeMode ? 'END TIME' : 'START TIME'}</Text>
-              <View style={s.timeToggleWrap}>
-                <TouchableOpacity style={[s.timePill, !endTimeMode && s.timePillActive]} onPress={() => setEndTimeMode(false)} activeOpacity={0.8}>
-                  <Text style={[s.timePillTxt, !endTimeMode && s.timePillTxtActive]}>Start</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.timePill, endTimeMode && s.timePillActive]} onPress={() => setEndTimeMode(true)} activeOpacity={0.8}>
-                  <Text style={[s.timePillTxt, endTimeMode && s.timePillTxtActive]}>End</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View style={[s.px, { marginBottom: 0 }]}>
-              <View style={s.drumCard}>
-                <View style={s.drumHdrRow}>
-                  <Text style={[s.drumHdr, { flex: 3, textAlign: 'center' }]}>HOUR</Text>
-                  <View style={{ width: 24 }} />
-                  <Text style={[s.drumHdr, { flex: 3, textAlign: 'center' }]}>MIN</Text>
-                  <Text style={[s.drumHdr, { flex: 2, textAlign: 'center' }]}>AM/PM</Text>
-                </View>
-                <View style={s.drumRow}>
-                  <View style={{ flex: 3, alignItems: 'center' }}>
-                    <Drum items={HOURS_12} selected={endTimeMode ? endDisp12.h12 : startH12} onSelect={endTimeMode ? handleEndH12 : handleStartH12} width={76} />
-                  </View>
-                  <View style={{ width: 24, alignItems: 'center' }}>
-                    <Text style={s.colon}>:</Text>
-                  </View>
-                  <View style={{ flex: 3, alignItems: 'center' }}>
-                    <Drum items={ALL_MINS} selected={endTimeMode ? endMinDisplay : startMin} onSelect={endTimeMode ? handleEndMin : handleStartMin} width={76} />
-                  </View>
-                  <View style={{ flex: 2, alignItems: 'center' }}>
-                    <Drum items={PERIODS} selected={endTimeMode ? endDisp12.per : startPer} onSelect={endTimeMode ? handleEndPer : handleStartPer} width={60} />
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* ── Duration ── */}
-            <View style={s.sectionRow}>
-              <View style={s.sectionDot} /><Text style={s.sectionLabel}>DURATION</Text>
-            </View>
-            <View style={s.durRow}>
-              {DURATIONS.map(({ label, mins }) => {
-                const isSel = computedDur === mins;
-                return isSel ? (
-                  <LinearGradient key={mins} colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.durPillSel}>
-                    <TouchableOpacity onPress={() => handleDuration(mins)} activeOpacity={0.8}>
-                      <Text style={s.durTxtSel}>{label}</Text>
-                    </TouchableOpacity>
+              {/* ── Date Strip ── */}
+              <View style={s.dateStrip}>
+                {days.map((d, i) => (
+                  <DateCard key={toISO(d)} date={d} label={fmtDow(d, i)}
+                    isSelected={toISO(d) === toISO(screen.selectedDate)}
+                    onPress={() => screen.setSelectedDate(d)} />
+                ))}
+                <TouchableOpacity style={s.moreBtn} onPress={() => setCalModal(true)} activeOpacity={0.8}>
+                  <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={s.moreBadge}>
+                    <Text style={s.moreBadgeMon}>{selMonth}</Text>
+                    <Text style={s.moreBadgeDay}>{selDay}</Text>
                   </LinearGradient>
-                ) : (
-                  <TouchableOpacity key={mins} style={s.durPill} onPress={() => handleDuration(mins)} activeOpacity={0.75}>
-                    <Text style={s.durTxt}>{label}</Text>
-                  </TouchableOpacity>
+                  <Text style={s.moreLabel}>More</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* ── Current Booking ── */}
+              {(() => {
+                const cur = screen.currentBooking;
+                if (!cur) return null;
+                return (
+                  <View style={s.px}>
+                    <CurrentBookingCard
+                      booking={cur} expired={expired}
+                      onPressPOS={() => navigation.navigate('StaffSales', { bookingId: cur.id, bookingCustomer: cur.customer } as any)}
+                      onPressInvoice={() => navigation.navigate('Bill', { bookingId: cur.id } as any)}
+                    />
+                  </View>
                 );
-              })}
-            </View>
+              })()}
 
-            {/* ── Customer Info ── (lines 508–530 — uncomment to re-enable name/phone fields)
-            <View style={s.sectionRow}>
-              <View style={s.sectionDot} /><Text style={s.sectionLabel}>CUSTOMER</Text>
-            </View>
-            <View style={[s.px, { gap: 8, marginBottom: 4 }]}>
-              <TextInput
-                style={s.infoInput}
-                value={custName}
-                onChangeText={setCustName}
-                placeholder="Customer name"
-                placeholderTextColor={T.text3}
-                autoCapitalize="words"
-              />
-              <TextInput
-                style={s.infoInput}
-                value={custPhone}
-                onChangeText={(t) => setCustPhone(t.replace(/\D/g, '').slice(0, 10))}
-                placeholder="10-digit phone number"
-                placeholderTextColor={T.text3}
-                keyboardType="number-pad"
-                maxLength={10}
-              />
-            </View>
-            */}
+              {/* ── Booked chips ── */}
+              {screen.loadingSlots ? (
+                <View style={s.chipRow}><ActivityIndicator size="small" color={T.grad0} /></View>
+              ) : screen.bookings.length === 0 && screen.activeHolds.length === 0 ? (
+                <View style={s.chipRow}>
+                  <View style={s.allClear}><Text style={s.allClearTxt}>✓  All slots available</Text></View>
+                </View>
+              ) : (
+                <View style={s.chipBlock}>
+                  <Text style={s.chipLabel}>Booked:</Text>
+                  <View style={s.chipWrap}>
+                    {screen.bookings.map((b, i) => (
+                      <TouchableOpacity key={`b-${b.id}-${i}`} style={s.bookedChip} activeOpacity={0.75} onPress={() => openChipDetail(b.id)}>
+                        <Text style={s.bookedChipTxt}>{b.displaySlot}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {screen.activeHolds.map((h, i) => (
+                      <View key={`h-${i}`} style={s.holdChip}><Text style={s.holdChipTxt}>⏳ {h.slotLabel}</Text></View>
+                    ))}
+                  </View>
+                </View>
+              )}
 
-            {/* ── Error ── */}
-            {hasError && (
-              <View style={[s.px, { marginTop: 8 }]}>
-                <View style={s.errBanner}>
-                  <Text style={s.errIcon}>⚠</Text>
-                  <Text style={s.errTxt}>{screen.slotConflict?.message ?? screen.timeError}</Text>
+              {/* ── Hold banner ── */}
+              {screen.holdState.holdId && screen.holdState.expiresAt && (
+                <View style={s.px}><SlotHoldBanner queuePos={screen.holdState.queuePos} expiresAt={screen.holdState.expiresAt} /></View>
+              )}
+              {!screen.holdState.holdId && (() => {
+                const hold = screen.activeHolds.find((h) => h.slotLabel === screen.slotLabel);
+                if (!hold) return null;
+                return <View style={s.px}><SlotHoldBanner queuePos={hold.queueCount + 1} expiresAt={new Date(hold.expiresAt)} /></View>;
+              })()}
+
+              {/* ── Time Picker ── */}
+              <View style={s.sectionRow}>
+                <View style={s.sectionDot} />
+                <Text style={s.sectionLabel}>{endTimeMode ? 'END TIME' : 'START TIME'}</Text>
+                <View style={s.timeToggleWrap}>
+                  <TouchableOpacity style={[s.timePill, !endTimeMode && s.timePillActive]} onPress={() => setEndTimeMode(false)} activeOpacity={0.8}>
+                    <Text style={[s.timePillTxt, !endTimeMode && s.timePillTxtActive]}>Start</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.timePill, endTimeMode && s.timePillActive]} onPress={() => setEndTimeMode(true)} activeOpacity={0.8}>
+                    <Text style={[s.timePillTxt, endTimeMode && s.timePillTxtActive]}>End</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            )}
+              <View style={[s.px, { marginBottom: 0 }]}>
+                <View style={s.drumCard}>
+                  <View style={s.drumHdrRow}>
+                    <Text style={[s.drumHdr, { flex: 3, textAlign: 'center' }]}>HOUR</Text>
+                    <View style={{ width: 24 }} />
+                    <Text style={[s.drumHdr, { flex: 3, textAlign: 'center' }]}>MIN</Text>
+                    <Text style={[s.drumHdr, { flex: 2, textAlign: 'center' }]}>AM/PM</Text>
+                  </View>
+                  <View style={s.drumRow}>
+                    <View style={{ flex: 3, alignItems: 'center' }}>
+                      <Drum items={HOURS_12} selected={endTimeMode ? endDisp12.h12 : startH12} onSelect={endTimeMode ? handleEndH12 : handleStartH12} width={76} />
+                    </View>
+                    <View style={{ width: 24, alignItems: 'center' }}>
+                      <Text style={s.colon}>:</Text>
+                    </View>
+                    <View style={{ flex: 3, alignItems: 'center' }}>
+                      <Drum items={ALL_MINS} selected={endTimeMode ? endMinDisplay : startMin} onSelect={endTimeMode ? handleEndMin : handleStartMin} width={76} />
+                    </View>
+                    <View style={{ flex: 2, alignItems: 'center' }}>
+                      <Drum items={PERIODS} selected={endTimeMode ? endDisp12.per : startPer} onSelect={endTimeMode ? handleEndPer : handleStartPer} width={60} />
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* ── Duration ── */}
+              <View style={s.sectionRow}>
+                <View style={s.sectionDot} /><Text style={s.sectionLabel}>DURATION</Text>
+              </View>
+              <View style={s.durRow}>
+                {DURATIONS.map(({ label, mins }) => {
+                  const isSel = computedDur === mins;
+                  return isSel ? (
+                    <LinearGradient key={mins} colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.durPillSel}>
+                      <TouchableOpacity onPress={() => handleDuration(mins)} activeOpacity={0.8}>
+                        <Text style={s.durTxtSel}>{label}</Text>
+                      </TouchableOpacity>
+                    </LinearGradient>
+                  ) : (
+                    <TouchableOpacity key={mins} style={s.durPill} onPress={() => handleDuration(mins)} activeOpacity={0.75}>
+                      <Text style={s.durTxt}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* ── Error ── */}
+              {hasError && (
+                <View style={[s.px, { marginTop: 8 }]}>
+                  <View style={s.errBanner}>
+                    <Text style={s.errIcon}>⚠</Text>
+                    <Text style={s.errTxt}>{screen.slotConflict?.message ?? screen.timeError}</Text>
+                  </View>
+                </View>
+              )}
 
             </ScrollView>
 
-            {/* ── Continue Button — fixed at bottom, outside scroll ── */}
+            {/* ── Continue Button ── */}
             {!hasError && screen.durationMinutes > 0 && (
               <View style={s.contWrap}>
                 <TouchableOpacity
                   onPress={() => profile?.id && screen.handleOpenRequestModal(profile.id)}
-                  disabled={screen.acquiringHold}
-                  activeOpacity={0.88}
+                  disabled={screen.acquiringHold} activeOpacity={0.88}
                   style={{ opacity: screen.acquiringHold ? 0.65 : 1 }}
                 >
                   <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.contBtn}>
@@ -594,18 +611,9 @@ export default function StaffBookingScreen() {
 
       {/* Slot Detail Modal */}
       <Modal visible={!!chipDetail || chipLoading} transparent animationType="slide">
-        <KeyboardAvoidingView
-          style={sd.overlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <KeyboardAvoidingView style={sd.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setChipDetail(null)} />
-          <ScrollView
-            style={sd.sheetScroll}
-            contentContainerStyle={sd.sheet}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <ScrollView style={sd.sheetScroll} contentContainerStyle={sd.sheet} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
             <View style={sd.handle} />
             {chipLoading ? (
               <ActivityIndicator color={T.grad0} style={{ marginVertical: 30 }} />
@@ -619,21 +627,15 @@ export default function StaffBookingScreen() {
                 </View>
 
                 {([
-                  { label: 'Slot Time', val: editSlotTxt,       set: setEditSlotTxt,       kb: 'default',    cap: 'none' },
-                  { label: 'Customer',  val: editChipCustomer,  set: setEditChipCustomer,  kb: 'default',    cap: 'words' },
-                  { label: 'Phone',     val: editChipPhone,     set: setEditChipPhone,     kb: 'phone-pad',  cap: 'none' },
-                  { label: 'Amount (₹)',val: editChipAmount,    set: setEditChipAmount,    kb: 'number-pad', cap: 'none' },
+                  { label: 'Slot Time', val: editSlotTxt,      set: setEditSlotTxt,      kb: 'default',    cap: 'none'  },
+                  { label: 'Customer',  val: editChipCustomer, set: setEditChipCustomer, kb: 'default',    cap: 'words' },
+                  { label: 'Phone',     val: editChipPhone,    set: setEditChipPhone,    kb: 'phone-pad',  cap: 'none'  },
+                  { label: 'Amount (₹)',val: editChipAmount,   set: setEditChipAmount,   kb: 'number-pad', cap: 'none'  },
                 ] as const).map((f) => (
                   <View key={f.label} style={sd.fieldBlock}>
                     <Text style={sd.fieldLbl}>{f.label}</Text>
-                    <TextInput
-                      style={sd.fieldInput}
-                      value={f.val}
-                      onChangeText={f.set as (v: string) => void}
-                      placeholderTextColor={T.text3}
-                      keyboardType={f.kb as any}
-                      autoCapitalize={f.cap as any}
-                    />
+                    <TextInput style={sd.fieldInput} value={f.val} onChangeText={f.set as (v: string) => void}
+                      placeholderTextColor={T.text3} keyboardType={f.kb as any} autoCapitalize={f.cap as any} />
                   </View>
                 ))}
 
@@ -641,11 +643,7 @@ export default function StaffBookingScreen() {
                   <Text style={sd.fieldLbl}>Status</Text>
                   <View style={sd.statusRow}>
                     {['Confirmed', 'Pending', 'Cancelled'].map((st) => (
-                      <TouchableOpacity
-                        key={st}
-                        style={[sd.statusPill, editChipStatus === st && sd.statusPillActive]}
-                        onPress={() => setEditChipStatus(st)}
-                      >
+                      <TouchableOpacity key={st} style={[sd.statusPill, editChipStatus === st && sd.statusPillActive]} onPress={() => setEditChipStatus(st)}>
                         <Text style={[sd.statusPillTxt, editChipStatus === st && sd.statusPillTxtActive]}>{st}</Text>
                       </TouchableOpacity>
                     ))}
@@ -731,12 +729,12 @@ const s = StyleSheet.create({
   calBadgeMon:{ fontSize: 7.5, fontWeight: '800', color: 'rgba(255,255,255,0.80)', letterSpacing: 0.8 },
   calBadgeDay:{ fontSize: 20, fontWeight: '900', color: T.white, lineHeight: 24 },
 
-  dateStrip:  { flexDirection: 'row', gap: 6, paddingHorizontal: 20, paddingVertical: 10 },
-  moreBtn:    { flex: 1, alignItems: 'center', gap: 3, justifyContent: 'center' },
-  moreBadge:  { width: 34, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', gap: 0 },
+  dateStrip:   { flexDirection: 'row', gap: 6, paddingHorizontal: 20, paddingVertical: 10 },
+  moreBtn:     { flex: 1, alignItems: 'center', gap: 3, justifyContent: 'center' },
+  moreBadge:   { width: 34, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', gap: 0 },
   moreBadgeMon:{ fontSize: 6.5, fontWeight: '800', color: 'rgba(255,255,255,0.80)', letterSpacing: 0.5 },
   moreBadgeDay:{ fontSize: 14, fontWeight: '900', color: T.white },
-  moreLabel:  { fontSize: 7.5, fontWeight: '600', color: T.text2 },
+  moreLabel:   { fontSize: 7.5, fontWeight: '600', color: T.text2 },
 
   chipRow:      { height: 34, paddingHorizontal: 20, marginBottom: 8, justifyContent: 'center' },
   chipBlock:    { paddingHorizontal: 20, marginBottom: 10 },
@@ -749,13 +747,13 @@ const s = StyleSheet.create({
   holdChip:     { backgroundColor: 'rgba(251,191,36,0.10)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: 'rgba(251,191,36,0.30)' },
   holdChipTxt:  { fontSize: 12, fontWeight: '700', color: '#D97706' },
 
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginBottom: 8, marginTop: 4 },
-  sectionDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: T.grad0 },
-  sectionLabel:{ fontSize: 9, fontWeight: '800', color: T.text2, letterSpacing: 2, textTransform: 'uppercase', flex: 1 },
-  timeToggleWrap:{ flexDirection: 'row', backgroundColor: T.bg, borderRadius: 20, borderWidth: 1, borderColor: T.border, padding: 2, gap: 2 },
-  timePill:    { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 18 },
-  timePillActive:{ backgroundColor: T.grad0 },
-  timePillTxt: { fontSize: 10, fontWeight: '700', color: T.text2 },
+  sectionRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginBottom: 8, marginTop: 4 },
+  sectionDot:      { width: 5, height: 5, borderRadius: 2.5, backgroundColor: T.grad0 },
+  sectionLabel:    { fontSize: 9, fontWeight: '800', color: T.text2, letterSpacing: 2, textTransform: 'uppercase', flex: 1 },
+  timeToggleWrap:  { flexDirection: 'row', backgroundColor: T.bg, borderRadius: 20, borderWidth: 1, borderColor: T.border, padding: 2, gap: 2 },
+  timePill:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 18 },
+  timePillActive:  { backgroundColor: T.grad0 },
+  timePillTxt:     { fontSize: 10, fontWeight: '700', color: T.text2 },
   timePillTxtActive:{ color: T.white },
 
   drumCard:   { backgroundColor: T.glass, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)', padding: 10, shadowColor: T.grad0, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 20, elevation: 4 },
@@ -764,37 +762,36 @@ const s = StyleSheet.create({
   drumRow:    { flexDirection: 'row', alignItems: 'center' },
   colon:      { fontSize: 24, fontWeight: '200', color: T.textDis, textAlign: 'center', marginBottom: 4 },
 
-  infoInput:  { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: T.text },
-  durRow:     { flexDirection: 'row', gap: 7, paddingHorizontal: 20, flexWrap: 'wrap' },
-  durPill:    { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 50, backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, shadowColor: 'rgba(0,0,0,0.04)', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 4, elevation: 1 },
-  durPillSel: { borderRadius: 50, shadowColor: T.grad0, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.26, shadowRadius: 8, elevation: 4 },
-  durTxt:     { fontSize: 12, fontWeight: '600', color: T.text2 },
-  durTxtSel:  { fontSize: 12, fontWeight: '700', color: T.white, paddingHorizontal: 13, paddingVertical: 7 },
+  durRow:    { flexDirection: 'row', gap: 7, paddingHorizontal: 20, flexWrap: 'wrap' },
+  durPill:   { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 50, backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, shadowColor: 'rgba(0,0,0,0.04)', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 4, elevation: 1 },
+  durPillSel:{ borderRadius: 50, shadowColor: T.grad0, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.26, shadowRadius: 8, elevation: 4 },
+  durTxt:    { fontSize: 12, fontWeight: '600', color: T.text2 },
+  durTxtSel: { fontSize: 12, fontWeight: '700', color: T.white, paddingHorizontal: 13, paddingVertical: 7 },
 
-  errBanner:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: T.errBg, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: T.errBd },
-  errIcon:    { fontSize: 13, color: T.errTxt },
-  errTxt:     { flex: 1, fontSize: 12, fontWeight: '600', color: T.errTxt },
+  errBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: T.errBg, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: T.errBd },
+  errIcon:   { fontSize: 13, color: T.errTxt },
+  errTxt:    { flex: 1, fontSize: 12, fontWeight: '600', color: T.errTxt },
 
-  contWrap:   { paddingHorizontal: 20, paddingBottom: 8, paddingTop: 12 },
-  contBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 17, borderRadius: 18, shadowColor: T.grad0, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.28, shadowRadius: 20, elevation: 7 },
-  contBtnTxt: { fontSize: 16, fontWeight: '800', color: T.white, letterSpacing: 0.2 },
+  contWrap:    { paddingHorizontal: 20, paddingBottom: 8, paddingTop: 12 },
+  contBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 17, borderRadius: 18, shadowColor: T.grad0, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.28, shadowRadius: 20, elevation: 7 },
+  contBtnTxt:  { fontSize: 16, fontWeight: '800', color: T.white, letterSpacing: 0.2 },
   contBtnArrow:{ fontSize: 18, fontWeight: '800', color: T.white },
 
-  calOverlay: { flex: 1, backgroundColor: 'rgba(26,26,26,0.55)', justifyContent: 'flex-end' },
-  calSheet:   { backgroundColor: T.surface, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 40 },
-  calHandle:  { width: 36, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 20 },
-  calTitle:   { fontSize: 18, fontWeight: '800', color: T.text, marginBottom: 20, textAlign: 'center' },
-  calMonthRow:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
-  calNavBtn:  { width: 38, height: 38, borderRadius: 12, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, alignItems: 'center', justifyContent: 'center' },
-  calNavTxt:  { fontSize: 22, color: T.text, fontWeight: '600' },
-  calMonthTxt:{ fontSize: 15, fontWeight: '700', color: T.text },
-  calDayHdrs: { flexDirection: 'row', marginBottom: 10 },
-  calDayHdr:  { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: T.text2 },
-  calGrid:    { flexDirection: 'row', flexWrap: 'wrap' },
-  calCell:    { width: `${100 / 7}%` as any, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', borderRadius: 50 },
-  calSelBg:   { ...StyleSheet.absoluteFillObject, borderRadius: 50 },
-  calDayTxt:  { fontSize: 14, fontWeight: '500', color: T.text, zIndex: 1 },
-  calCancel:  { marginTop: 20, paddingVertical: 15, alignItems: 'center', backgroundColor: T.bg, borderRadius: 16, borderWidth: 1, borderColor: T.border },
+  calOverlay:  { flex: 1, backgroundColor: 'rgba(26,26,26,0.55)', justifyContent: 'flex-end' },
+  calSheet:    { backgroundColor: T.surface, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 40 },
+  calHandle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 20 },
+  calTitle:    { fontSize: 18, fontWeight: '800', color: T.text, marginBottom: 20, textAlign: 'center' },
+  calMonthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  calNavBtn:   { width: 38, height: 38, borderRadius: 12, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, alignItems: 'center', justifyContent: 'center' },
+  calNavTxt:   { fontSize: 22, color: T.text, fontWeight: '600' },
+  calMonthTxt: { fontSize: 15, fontWeight: '700', color: T.text },
+  calDayHdrs:  { flexDirection: 'row', marginBottom: 10 },
+  calDayHdr:   { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: T.text2 },
+  calGrid:     { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell:     { width: `${100 / 7}%` as any, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', borderRadius: 50 },
+  calSelBg:    { ...StyleSheet.absoluteFillObject, borderRadius: 50 },
+  calDayTxt:   { fontSize: 14, fontWeight: '500', color: T.text, zIndex: 1 },
+  calCancel:   { marginTop: 20, paddingVertical: 15, alignItems: 'center', backgroundColor: T.bg, borderRadius: 16, borderWidth: 1, borderColor: T.border },
   calCancelTxt:{ fontSize: 14, fontWeight: '700', color: T.text2 },
 });
 

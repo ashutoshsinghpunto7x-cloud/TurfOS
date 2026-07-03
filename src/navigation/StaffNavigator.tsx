@@ -8,6 +8,8 @@ import InventoryScreen from '../screens/InventoryScreen';
 import CreditScreen from '../screens/CreditScreen';
 import BillScreen from '../screens/BillScreen';
 import PendingApprovalsScreen from '../screens/PendingApprovalsScreen';
+import PastBookingsScreen from '../screens/PastBookingsScreen';
+import StaffAllBookingsScreen from '../screens/StaffAllBookingsScreen';
 
 export type StaffStackParamList = {
   StaffDashboard: undefined;
@@ -24,6 +26,8 @@ export type StaffStackParamList = {
     bookingId: string;
   };
   PendingApprovals: undefined;
+  PastBookings: undefined;
+  AllBookings: undefined;
 };
 
 const Stack = createNativeStackNavigator<StaffStackParamList>();
@@ -64,6 +68,16 @@ export default function StaffNavigator() {
       <Stack.Screen
         name="PendingApprovals"
         component={PendingApprovalsScreen}
+      />
+
+      <Stack.Screen
+        name="PastBookings"
+        component={PastBookingsScreen}
+      />
+
+      <Stack.Screen
+        name="AllBookings"
+        component={StaffAllBookingsScreen}
       />
     </Stack.Navigator>
   );

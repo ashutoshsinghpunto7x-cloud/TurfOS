@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useStore } from '../store/useStore';
 import { signOut } from '../services/authService';
 import { supabase } from '../lib/supabase';
+import { buildSlotLabel } from '../services/bookingService';
 import { StaffStackParamList } from '../navigation/StaffNavigator';
 
 type Nav = NativeStackNavigationProp<StaffStackParamList>;
@@ -42,6 +43,10 @@ const GREEN_GRAD: [string, string]    = ['#10B981', '#059669'];
 interface Booking {
   id: string;
   slot: string;
+  /** Display label for the "Booked Slots" pill — same as `slot` except for a
+   *  cross-midnight booking carried over from yesterday, shown starting at
+   *  12:00 AM instead of repeating yesterday's original start time. */
+  displaySlot: string;
   turf: string;
   customer: string | null;
   phone: string | null;
@@ -168,26 +173,37 @@ export default function StaffDashboardScreen() {
     // Cross-midnight: yesterday's slots whose END time is before 6 AM and hasn't passed yet.
     // Uses clock time — no dependency on staff finalizing/completing the booking.
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const crossMidnight = (yestData ?? []).filter((b: any) => {
+    const crossMidnight: { row: any; endH: number; endMin: number }[] = [];
+    for (const b of (yestData ?? []) as any[]) {
       const parts = (b.slot ?? '').split(/\s*[–\-]\s*/);
-      if (parts.length < 2) return false;
+      if (parts.length < 2) continue;
       const m = parts[1].trim().match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-      if (!m) return false;
+      if (!m) continue;
       let endH = parseInt(m[1], 10);
       const endMin = parseInt(m[2], 10);
       if (m[3].toUpperCase() === 'AM' && endH === 12) endH = 0;
       if (m[3].toUpperCase() === 'PM' && endH !== 12) endH += 12;
-      if (endH >= 6) return false;                          // not a cross-midnight end
-      return nowMinutes < endH * 60 + endMin;               // auto-expire once slot ends
-    });
+      if (endH >= 6) continue;                              // not a cross-midnight end
+      if (nowMinutes >= endH * 60 + endMin) continue;        // auto-expire once slot ends
+      crossMidnight.push({ row: b, endH, endMin });
+    }
 
-    const all = [...(todayData ?? []), ...crossMidnight];
-    setBookings(all.map((b: any) => ({
-      id: b.id, slot: b.slot ?? '', turf: b.turf ?? 'Turf A',
-      customer: b.customer ?? null, phone: b.phone ?? null,
-      status: b.status, sport: b.sport ?? null,
-      amount: Number(b.amount ?? 0), booking_date: b.booking_date ?? '',
-    })));
+    setBookings([
+      ...(todayData ?? []).map((b: any) => ({
+        id: b.id, slot: b.slot ?? '', displaySlot: b.slot ?? '', turf: b.turf ?? 'Turf A',
+        customer: b.customer ?? null, phone: b.phone ?? null,
+        status: b.status, sport: b.sport ?? null,
+        amount: Number(b.amount ?? 0), booking_date: b.booking_date ?? '',
+      })),
+      // Displayed as starting at 12:00 AM today — the booking's own `slot` field still
+      // stores its true original start time (e.g. 11:00 PM), unchanged, for editing/saving.
+      ...crossMidnight.map(({ row: b, endH, endMin }) => ({
+        id: b.id, slot: b.slot ?? '', displaySlot: buildSlotLabel(0, 0, endH, endMin), turf: b.turf ?? 'Turf A',
+        customer: b.customer ?? null, phone: b.phone ?? null,
+        status: b.status, sport: b.sport ?? null,
+        amount: Number(b.amount ?? 0), booking_date: b.booking_date ?? '',
+      })),
+    ]);
   }, []);
 
   const loadPastBookings = useCallback(async () => {
@@ -200,7 +216,7 @@ export default function StaffDashboardScreen() {
       .order('booking_date', { ascending: false })
       .limit(30);
     setPastBookings((data ?? []).map((b: any) => ({
-      id: b.id, slot: b.slot ?? '', turf: b.turf ?? 'Turf A',
+      id: b.id, slot: b.slot ?? '', displaySlot: b.slot ?? '', turf: b.turf ?? 'Turf A',
       customer: b.customer ?? null, phone: b.phone ?? null,
       status: b.status, sport: b.sport ?? null,
       amount: Number(b.amount ?? 0), booking_date: b.booking_date ?? '',
@@ -407,7 +423,7 @@ export default function StaffDashboardScreen() {
                         style={[s.slotPill, isCurrent && s.slotPillActive]}
                       >
                         {isCurrent && <View style={s.pillLiveDot} />}
-                        <Text style={[s.pillTxt, isCurrent && s.pillTxtActive]}>{b.slot}</Text>
+                        <Text style={[s.pillTxt, isCurrent && s.pillTxtActive]}>{b.displaySlot}</Text>
                       </LinearGradient>
                     </TouchableOpacity>
                   );
@@ -432,6 +448,19 @@ export default function StaffDashboardScreen() {
               <Text style={sb.sbName}>{profile?.full_name ?? 'Staff'}</Text>
               <Text style={sb.sbRole}>Staff · Turf Management</Text>
             </View>
+
+            <View style={sb.divider} />
+
+            {/* Bookings (Past / Today / Upcoming) */}
+            <TouchableOpacity
+              style={sb.navRow}
+              onPress={() => { setSidebarOpen(false); navigation.navigate('AllBookings'); }}
+              activeOpacity={0.75}
+            >
+              <Text style={sb.navIcon}>📅</Text>
+              <Text style={sb.navTxt}>Bookings</Text>
+              <Text style={sb.navArrow}>›</Text>
+            </TouchableOpacity>
 
             <View style={sb.divider} />
 
@@ -671,6 +700,10 @@ const sb = StyleSheet.create({
   sbName:       { fontSize: 17, fontWeight: '800', color: T.text, textAlign: 'center' },
   sbRole:       { fontSize: 12, color: T.text3, marginTop: 4, textAlign: 'center' },
   divider:      { height: 1, backgroundColor: T.border, marginBottom: 16, marginHorizontal: 24 },
+  navRow:       { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 24, paddingVertical: 10, paddingHorizontal: 4 },
+  navIcon:      { fontSize: 17 },
+  navTxt:       { flex: 1, fontSize: 15, fontWeight: '700', color: T.text },
+  navArrow:     { fontSize: 18, color: T.text3, fontWeight: '600' },
   pastHdr:      { fontSize: 9, fontWeight: '800', color: T.text3, letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 8, marginHorizontal: 24 },
   pastScroll:   { flex: 1, marginBottom: 8 },
   pastRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: T.border },

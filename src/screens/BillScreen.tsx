@@ -56,11 +56,17 @@ export default function BillScreen() {
   const [editingItem, setEditingItem] = useState<BillLineItem | null>(null);
   const [editQty, setEditQty]         = useState('');
   const [savingEdit, setSavingEdit]   = useState(false);
+  const [cashInput, setCashInput]     = useState('');
+  const [onlineInput, setOnlineInput] = useState('');
 
   const loadBill = useCallback(async () => {
     if (!bookingId) { setError('No booking ID.'); setLoading(false); return; }
     const { bill: b, error: e } = await fetchBillData(bookingId);
     setBill(b); setError(e);
+    if (b) {
+      setCashInput(b.cashAmount ? String(b.cashAmount) : '');
+      setOnlineInput(b.onlineAmount ? String(b.onlineAmount) : '');
+    }
   }, [bookingId]);
 
   useFocusEffect(useCallback(() => {
@@ -69,11 +75,22 @@ export default function BillScreen() {
   }, [loadBill]));
 
   const handleFinalize = () => {
+    if (!bill) return;
+    const cash   = safeNum(parseFloat(cashInput), 0);
+    const online = safeNum(parseFloat(onlineInput), 0);
+    const diff   = Math.round((cash + online) * 100) / 100 - Math.round(bill.grandTotal * 100) / 100;
+    if (Math.abs(diff) > 0.5) {
+      Alert.alert(
+        'Amount Mismatch',
+        `Cash (₹${cash}) + Online (₹${online}) must add up to the Grand Total (₹${n(bill.grandTotal)}).`,
+      );
+      return;
+    }
     Alert.alert('Finalize Bill', 'Confirm and save the final bill?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Confirm', onPress: async () => {
         setFinalizing(true);
-        const { error: e } = await finalizeBill(bookingId);
+        const { error: e } = await finalizeBill({ bookingId, cashAmount: cash, onlineAmount: online });
         setFinalizing(false);
         if (e) { Alert.alert('Error', e); return; }
         await loadBill();
@@ -297,6 +314,48 @@ export default function BillScreen() {
 
             <Div />
 
+            {/* Payment split (cash / online) */}
+            <Text style={s.sectionLabel}>Payment Split</Text>
+            {bill.isFinalized ? (
+              <>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Cash</Text>
+                  <Text style={s.infoVal}>₹{n(bill.cashAmount)}</Text>
+                </View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Online</Text>
+                  <Text style={s.infoVal}>₹{n(bill.onlineAmount)}</Text>
+                </View>
+              </>
+            ) : canFinalize ? (
+              <View style={s.splitRow}>
+                <View style={s.splitField}>
+                  <Text style={s.splitLabel}>Cash (₹)</Text>
+                  <TextInput
+                    style={s.splitInput}
+                    value={cashInput}
+                    onChangeText={(t) => setCashInput(t.replace(/[^0-9.]/g, ''))}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={T.text3}
+                  />
+                </View>
+                <View style={s.splitField}>
+                  <Text style={s.splitLabel}>Online (₹)</Text>
+                  <TextInput
+                    style={s.splitInput}
+                    value={onlineInput}
+                    onChangeText={(t) => setOnlineInput(t.replace(/[^0-9.]/g, ''))}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={T.text3}
+                  />
+                </View>
+              </View>
+            ) : null}
+
+            <Div />
+
             <Text style={s.footNote}>
               Thank you for visiting Playbox!{'\n'}
               Advance of ₹{n(bill.advanceAmount)} is non-refundable.
@@ -422,6 +481,11 @@ const s = StyleSheet.create({
   infoRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
   infoLabel:        { fontSize: 13, color: T.text2 },
   infoVal:          { fontSize: 13, fontWeight: '700', color: T.text, textAlign: 'right' },
+
+  splitRow:         { flexDirection: 'row', gap: 10, marginTop: 4 },
+  splitField:       { flex: 1 },
+  splitLabel:       { fontSize: 11, fontWeight: '700', color: T.text3, marginBottom: 4 },
+  splitInput:       { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, fontWeight: '700', color: T.text },
 
   subtotalRow:      { borderTopWidth: 1, borderTopColor: T.border, paddingTop: 8, marginTop: 4 },
   subtotalLabel:    { fontSize: 14, fontWeight: '800', color: T.text },

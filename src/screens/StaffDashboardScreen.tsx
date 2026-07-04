@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView,
   Animated, Easing, Modal, TextInput, KeyboardAvoidingView, Platform, AppState,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -11,6 +12,7 @@ import { useStore } from '../store/useStore';
 import { signOut } from '../services/authService';
 import { supabase } from '../lib/supabase';
 import { buildSlotLabel } from '../services/bookingService';
+import { markAttendanceToday, fetchMyAttendanceToday } from '../services/attendanceService';
 import { StaffStackParamList } from '../navigation/StaffNavigator';
 
 type Nav = NativeStackNavigationProp<StaffStackParamList>;
@@ -63,6 +65,10 @@ function todayFull() {
 function getMonth()    { return new Date().toLocaleDateString('en-IN', { month: 'short' }).toUpperCase(); }
 function getDate()     { return new Date().getDate(); }
 function getDayShort() { return new Date().toLocaleDateString('en-IN', { weekday: 'short' }).toUpperCase(); }
+function fmtTime(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+}
 
 function parseSlot(slot: string): { start: Date; end: Date } | null {
   const parts = slot.split(/\s*[–\-]\s*/);
@@ -130,6 +136,10 @@ export default function StaffDashboardScreen() {
   const [editAmount, setEditAmount]     = useState('');
   const [editStatus, setEditStatus]     = useState('');
   const [saving, setSaving]             = useState(false);
+
+  const [attendancePresent, setAttendancePresent]   = useState(false);
+  const [attendanceMarkedAt, setAttendanceMarkedAt] = useState<string | null>(null);
+  const [markingAttendance, setMarkingAttendance]   = useState(false);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   const heroAnim   = useRef(new Animated.Value(0)).current;
@@ -223,7 +233,23 @@ export default function StaffDashboardScreen() {
     })));
   }, []);
 
-  useFocusEffect(useCallback(() => { loadBookings(); loadPastBookings(); }, [loadBookings, loadPastBookings]));
+  const loadAttendance = useCallback(async () => {
+    if (!profile?.id) return;
+    const { marked, markedAt } = await fetchMyAttendanceToday(profile.id);
+    setAttendancePresent(marked);
+    setAttendanceMarkedAt(markedAt);
+  }, [profile?.id]);
+
+  const handleMarkAttendance = async () => {
+    if (!profile?.id || attendancePresent || markingAttendance) return;
+    setMarkingAttendance(true);
+    const { error } = await markAttendanceToday(profile.id);
+    setMarkingAttendance(false);
+    if (error) { Alert.alert('Error', error); return; }
+    loadAttendance();
+  };
+
+  useFocusEffect(useCallback(() => { loadBookings(); loadPastBookings(); loadAttendance(); }, [loadBookings, loadPastBookings, loadAttendance]));
 
   // Reload at midnight so today's date flips correctly even if screen stays open
   useEffect(() => {
@@ -352,6 +378,36 @@ export default function StaffDashboardScreen() {
                 <View style={s.bookNowBtn}><Text style={s.bookNowTxt}>Book Now  →</Text></View>
               </LinearGradient>
             </PressCard>
+          </Animated.View>
+
+          {/* ── Attendance ── */}
+          <Animated.View style={[fade(qaAnim), { marginHorizontal: 20, marginBottom: 22 }]}>
+            <View style={s.sectionRow}>
+              <View style={s.sectionDot} />
+              <Text style={s.sectionLabel}>ATTENDANCE</Text>
+            </View>
+            <TouchableOpacity
+              activeOpacity={attendancePresent ? 1 : 0.85}
+              disabled={attendancePresent || markingAttendance}
+              onPress={handleMarkAttendance}
+            >
+              <View style={[s.attendanceCard, attendancePresent && s.attendanceCardDone]}>
+                <View style={[s.attendanceIconWrap, attendancePresent && s.attendanceIconWrapDone]}>
+                  <Text style={s.attendanceIcon}>{attendancePresent ? '✅' : '🕘'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.attendanceTitle}>{attendancePresent ? 'Present Today' : 'Mark Attendance'}</Text>
+                  <Text style={s.attendanceSub}>
+                    {attendancePresent ? `Marked at ${fmtTime(attendanceMarkedAt)}` : 'Tap to check in for today'}
+                  </Text>
+                </View>
+                {!attendancePresent && (
+                  markingAttendance
+                    ? <ActivityIndicator color={T.grad0} />
+                    : <Text style={s.attendanceArrow}>›</Text>
+                )}
+              </View>
+            </TouchableOpacity>
           </Animated.View>
 
           {/* ── Sales (horizontal full-width) ── */}
@@ -641,6 +697,16 @@ const s = StyleSheet.create({
   sectionDot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: T.grad0 },
   sectionLabel: { fontSize: 9.5, fontWeight: '800', color: T.text2, letterSpacing: 2.2, textTransform: 'uppercase', flex: 1 },
   slotCountBadge:{ fontSize: 12, fontWeight: '800', color: T.okTxt, backgroundColor: T.okBg, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 20, borderWidth: 1, borderColor: T.okBd },
+
+  /* Attendance card */
+  attendanceCard:       { borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: T.border, backgroundColor: T.surface, shadowColor: 'rgba(0,0,0,0.05)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 12, elevation: 2 },
+  attendanceCardDone:   { borderColor: T.okBd, backgroundColor: T.okBg },
+  attendanceIconWrap:   { width: 50, height: 50, borderRadius: 14, backgroundColor: 'rgba(124,77,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  attendanceIconWrapDone:{ backgroundColor: 'rgba(16,185,129,0.14)' },
+  attendanceIcon:       { fontSize: 24 },
+  attendanceTitle:      { fontSize: 15, fontWeight: '800', color: T.text },
+  attendanceSub:        { fontSize: 12, color: T.text2, marginTop: 2 },
+  attendanceArrow:      { fontSize: 22, color: T.text3, fontWeight: '600' },
 
   /* Sales card */
   salesCard:   { borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: T.saleBd, backgroundColor: T.surface, overflow: 'hidden', shadowColor: 'rgba(124,77,255,0.10)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 12, elevation: 2 },

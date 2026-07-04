@@ -14,7 +14,7 @@ import Svg, {
 import {
   Menu, Search, Bell, Calendar, Users, IndianRupee,
   Package, Trophy, BarChart2, Tag, ClipboardList, UserCheck,
-  Settings, ChevronDown, TrendingUp, AlertCircle, ArrowUpRight,
+  Settings, ChevronDown, TrendingUp, AlertCircle, ArrowUpRight, PlusCircle,
 } from 'lucide-react-native';
 import { useStore } from '../store/useStore';
 import { signOut } from '../services/authService';
@@ -463,13 +463,14 @@ export default function DashboardScreen() {
 
   const ACTIONS = [
     { icon: <Calendar      size={22} color={T.blue}   />, tint: T.blueSf,   label: 'Bookings',    route: 'Calendar' },
+    { icon: <PlusCircle    size={22} color={T.green}  />, tint: T.greenSf,  label: 'New Booking', route: 'NewBooking' },
     { icon: <Users         size={22} color={T.purple} />, tint: T.purple15,  label: 'Customers',   route: 'Customers' },
     { icon: <Trophy        size={22} color={T.amber}  />, tint: T.amberSf,  label: 'Tournaments', route: 'Tournaments' },
     { icon: <Package       size={22} color={T.teal}   />, tint: T.tealSf,   label: 'Inventory',   route: 'Inventory' },
     { icon: <BarChart2     size={22} color={T.pink}   />, tint: T.pinkSf,   label: 'Reports',     route: 'Reports' },
     { icon: <Tag           size={22} color={T.orange} />, tint: T.orangeSf, label: 'Coupons',     route: 'Coupons' },
     { icon: <ClipboardList size={22} color={T.blue}   />, tint: T.blueSf,   label: 'Approvals',   route: 'PendingApprovals' },
-    { icon: <UserCheck     size={22} color={T.teal}   />, tint: T.tealSf,   label: 'Staff',       route: 'Customers' },
+    { icon: <UserCheck     size={22} color={T.teal}   />, tint: T.tealSf,   label: 'Staff',       route: 'Attendance' },
     { icon: <Settings      size={22} color={T.text3}  />, tint: 'rgba(100,116,139,0.10)', label: 'Settings', route: 'Settings' },
   ];
 

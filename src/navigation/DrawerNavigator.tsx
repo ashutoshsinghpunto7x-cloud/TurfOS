@@ -22,7 +22,8 @@ import BillScreen from '../screens/BillScreen';
 import DayBookingsScreen from '../screens/DayBookingsScreen';
 import BookingDetailScreen from '../screens/BookingDetailScreen';
 import CouponManagementScreen from '../screens/CouponManagementScreen';
-import PastBookingsScreen     from '../screens/PastBookingsScreen';
+import OwnerAllBookingsScreen from '../screens/OwnerAllBookingsScreen';
+import AttendanceScreen       from '../screens/AttendanceScreen';
 
 // ✅ NEW TOURNAMENT SCREENS
 import TournamentsScreen from '../screens/TournamentsScreen';
@@ -37,6 +38,7 @@ export type DrawerParamList = {
   Settings:     undefined;
   PendingApprovals: undefined;
   PastBookings: undefined;
+  Attendance:   undefined;
 
   Bill: {
     bookingId: string;
@@ -172,10 +174,19 @@ function OwnerDrawer() {
 
       <Drawer.Screen
         name="PastBookings"
-        component={PastBookingsScreen}
+        component={OwnerAllBookingsScreen}
         options={{
-          title: 'Past Bookings',
-          drawerIcon: () => <Text>📂</Text>,
+          title: 'Bookings',
+          drawerIcon: () => <Text>📅</Text>,
+        }}
+      />
+
+      <Drawer.Screen
+        name="Attendance"
+        component={AttendanceScreen}
+        options={{
+          title: 'Attendance',
+          drawerIcon: () => <Text>🧍</Text>,
         }}
       />
 

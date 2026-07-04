@@ -28,6 +28,8 @@ export interface BillData {
   posTotal:      number;
   grandTotal:    number;
   isFinalized:   boolean;
+  cashAmount:    number;
+  onlineAmount:  number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -83,7 +85,7 @@ export async function fetchBillData(bookingId: string): Promise<{
 }> {
   const { data: b, error: bErr } = await supabase
     .from('bookings')
-    .select('id, customer, phone, sport, slot, booking_date, amount, advance_amount, customer_id, paid, turf')
+    .select('id, customer, phone, sport, slot, booking_date, amount, advance_amount, customer_id, paid, turf, cash_amount, online_amount')
     .eq('id', bookingId)
     .single();
 
@@ -149,6 +151,8 @@ export async function fetchBillData(bookingId: string): Promise<{
       posTotal,
       grandTotal: remainingSlot + posTotal,
       isFinalized: b.paid === true,
+      cashAmount:   safeNum(b.cash_amount, 0),
+      onlineAmount: safeNum(b.online_amount, 0),
     },
     error: null,
   };
@@ -195,7 +199,7 @@ export async function editPOSLineItem(params: {
       p_item_id:  params.inventoryItemId,
       p_quantity: Math.abs(delta),
     });
-    if (rpcErr) console.warn('Stock sync warning:', rpcErr.message);
+    // rpcErr is non-fatal — fetchBillData recomputes stock from items
   }
 
   return { error: null };
@@ -246,8 +250,17 @@ export async function removePOSLineItem(params: {
 
 // ── Finalize ───────────────────────────────────────────────────────────────
 
-export async function finalizeBill(bookingId: string): Promise<{ error: string | null }> {
+export async function finalizeBill(params: {
+  bookingId: string; cashAmount: number; onlineAmount: number;
+}): Promise<{ error: string | null }> {
   const { error } = await supabase
-    .from('bookings').update({ paid: true, status: 'Completed' }).eq('id', bookingId);
+    .from('bookings')
+    .update({
+      paid: true,
+      status: 'Completed',
+      cash_amount:   safeNum(params.cashAmount, 0),
+      online_amount: safeNum(params.onlineAmount, 0),
+    })
+    .eq('id', params.bookingId);
   return { error: error?.message ?? null };
 }

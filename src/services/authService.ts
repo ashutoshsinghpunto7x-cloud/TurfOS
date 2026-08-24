@@ -56,10 +56,7 @@ export async function signUpCustomer(params: {
     role,
   });
 
-  if (profileErr) {
-    // Profile upsert failed — log but don't block (user can still log in after confirmation)
-    console.warn('Profile upsert warning:', profileErr.message);
-  }
+  // Profile upsert failed — don't block (user can still log in after confirmation)
 
   // Step 3: Check if email confirmation is required
   // When email confirmation is ON, data.session is null but data.user exists

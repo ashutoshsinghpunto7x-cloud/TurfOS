@@ -5,6 +5,7 @@ import CustomerBookingScreen   from '../screens/CustomerBookingScreen';
 import BillScreen              from '../screens/BillScreen';
 import CustomerLiveScoringScreen from '../screens/CustomerLiveScoringScreen';
 import MatchScoringScreen from '../screens/MatchScoringScreen';
+import FindPlayersScreen from '../screens/FindPlayersScreen';
 
 export type CustomerStackParamList = {
   CustomerDashboard: undefined;
@@ -12,6 +13,7 @@ export type CustomerStackParamList = {
   Bill: { bookingId: string };
   CustomerLiveScoring: undefined;
   MatchScoring: { fixtureId: string; tournamentId: string };
+  FindPlayers: undefined;
 };
 
 const Stack = createNativeStackNavigator<CustomerStackParamList>();
@@ -24,6 +26,7 @@ export default function CustomerNavigator() {
       <Stack.Screen name="Bill"              component={BillScreen}              />
       <Stack.Screen name="CustomerLiveScoring" component={CustomerLiveScoringScreen} />
 <Stack.Screen name="MatchScoring" component={MatchScoringScreen} />
+      <Stack.Screen name="FindPlayers" component={FindPlayersScreen} />
     </Stack.Navigator>
   );
 }

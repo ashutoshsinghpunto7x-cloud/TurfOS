@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView, Platform, Animated, Easing,
   ScrollView as RNScrollView,
   NativeSyntheticEvent, NativeScrollEvent,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -15,8 +14,9 @@ import { useStore } from '../store/useStore';
 import { useBookingScreen } from '../hooks/useBookingScreen';
 import SlotHoldBanner     from '../components/booking/SlotHoldBanner';
 import BookingRequestModal from './BookingRequestModal';
+import { getClampedWindowWidth } from '../components/WebFrame';
 
-const { width: SW } = Dimensions.get('window');
+const SW = getClampedWindowWidth();
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {

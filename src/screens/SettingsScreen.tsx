@@ -44,7 +44,10 @@ export default function SettingsScreen() {
   const load = useCallback(async () => {
     if (!profile?.id) return;
     setLoading(true);
-    const { data } = await supabase.from('owner_settings').select('allow_staff_requests, online_approval_mode').eq('owner_id', profile.id).single();
+    // .maybeSingle() instead of .single() — a first-time owner with no
+    // owner_settings row yet is expected, not an error (avoids a 406 from
+    // PostgREST and lets the defaults below stand).
+    const { data } = await supabase.from('owner_settings').select('allow_staff_requests, online_approval_mode').eq('owner_id', profile.id).maybeSingle();
     if (data) setSettings({ allow_staff_requests: (data as any).allow_staff_requests !== false, online_approval_mode: (data as any).online_approval_mode !== false });
     setLoading(false);
   }, [profile?.id]);

@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Updates from 'expo-updates';
 import RootNavigator from './src/navigation/RootNavigator';
+import WebFrame from './src/components/WebFrame';
 
 function useOTAUpdate() {
   useEffect(() => {
@@ -51,10 +52,12 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <RootNavigator />
-      </SafeAreaProvider>
+      <WebFrame>
+        <SafeAreaProvider>
+          <StatusBar style="dark" />
+          <RootNavigator />
+        </SafeAreaProvider>
+      </WebFrame>
     </GestureHandlerRootView>
   );
 }

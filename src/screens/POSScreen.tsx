@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal,
-  ActivityIndicator, Alert, ScrollView, Dimensions,
+  ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,8 +11,9 @@ import { useStore } from '../store/useStore';
 import { fetchPOSItems, fetchRecentTransactions, saveSale, undoSale } from '../services/posService';
 import { POSItem, Transaction } from '../types';
 import { supabase } from '../lib/supabase';
+import { getClampedWindowWidth } from '../components/WebFrame';
 
-const { width: SW } = Dimensions.get('window');
+const SW = getClampedWindowWidth();
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const T = {

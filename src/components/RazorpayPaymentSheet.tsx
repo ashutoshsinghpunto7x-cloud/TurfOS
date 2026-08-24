@@ -103,7 +103,6 @@ export default function RazorpayPaymentSheet({
       });
 
       if (orderResult.error || !orderResult.orderId) {
-        console.log('[Razorpay] createOrder failed:', orderResult);
         const msg = orderResult.error ?? 'Could not create payment order.';
         setErrorMsg(msg);
         setState('failed');
@@ -112,7 +111,6 @@ export default function RazorpayPaymentSheet({
       }
       if (!orderResult.keyId) {
         const msg = 'Razorpay key_id missing from server response. Check RAZORPAY_KEY_ID secret in Supabase Edge Functions.';
-        console.log('[Razorpay]', msg);
         setErrorMsg(msg);
         setState('failed');
         onFailure(msg);
@@ -141,15 +139,10 @@ export default function RazorpayPaymentSheet({
         theme: { color: '#7c3aed' },
       };
 
-      console.log('[Razorpay] opening checkout with', { ...options, key: '[hidden]' });
-
       let paymentData: any;
       try {
         paymentData = await RazorpayCheckout.open(options);
       } catch (rzpError: any) {
-        // Log full error for debugging — Razorpay errors are notoriously opaque
-        console.log('[Razorpay] checkout error:', JSON.stringify(rzpError));
-
         const code = rzpError?.code;
         const description: string =
           rzpError?.description ??
@@ -199,7 +192,6 @@ export default function RazorpayPaymentSheet({
       });
 
       if (!verifyResult.success) {
-        console.log('[Razorpay] verify failed:', verifyResult);
         const errMsg = verifyResult.error ?? 'Payment verification failed.';
         setErrorMsg(errMsg);
         setState('failed');

@@ -130,9 +130,7 @@ export async function saveSale(params: {
     .from('pos_transaction_items')
     .insert(lineRows);
 
-  if (lineError) {
-    console.warn('pos_transaction_items insert failed:', lineError.message);
-  }
+  // lineError is non-fatal — re-fetch below returns current state
 
   // 3. Re-fetch full row with items
   const { data: fullTx, error: fetchError } = await supabase

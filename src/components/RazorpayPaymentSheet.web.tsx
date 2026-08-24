@@ -93,7 +93,6 @@ export default function RazorpayPaymentSheet({
     });
 
     if (orderResult.error || !orderResult.orderId) {
-      console.log('[Razorpay-web] createOrder failed:', orderResult);
       const msg = orderResult.error ?? 'Could not create payment order.';
       setErrorMsg(msg); setState('failed'); onFailure(msg);
       return;
@@ -147,7 +146,6 @@ export default function RazorpayPaymentSheet({
     try {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', (resp: any) => {
-        console.log('[Razorpay-web] payment.failed:', resp);
         const msg = resp?.error?.description ?? 'Payment failed. Please try again.';
         setErrorMsg(msg); setState('failed'); onFailure(msg);
       });

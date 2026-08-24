@@ -7,8 +7,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getClampedWindowWidth } from '../components/WebFrame';
 
-const { width: W, height: H } = Dimensions.get('window');
+const { height: H } = Dimensions.get('window');
+const W = getClampedWindowWidth();
 
 const GRAD: [string, string, string] = ['#6B47E8', '#7B5CF6', '#4FA8F0'];
 

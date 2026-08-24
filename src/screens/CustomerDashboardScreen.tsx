@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, Alert, Clipboard,
-  Animated, Easing, Dimensions,
+  Animated, Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -11,8 +11,9 @@ import { supabase } from '../lib/supabase';
 import { signOut } from '../services/authService';
 import { fetchCustomerSentCoupons, markCouponRead, SentCoupon } from '../services/couponService';
 import { useStore } from '../store/useStore';
+import { getClampedWindowWidth } from '../components/WebFrame';
 
-const { width: SW } = Dimensions.get('window');
+const SW = getClampedWindowWidth();
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
@@ -298,10 +299,9 @@ export default function CustomerDashboardScreen() {
               onPress={() => Alert.alert('Tournaments', 'Live tournament listings coming soon!')}
             />
             <QuickCard
-              icon="👥" title="Find Players" sub="18 Nearby"
+              icon="👥" title="Find Players" sub="Post & Connect"
               tint={T.grad1}
-              badge={3}
-              onPress={() => Alert.alert('Find Players', "Player matchmaking is coming soon!")}
+              onPress={() => navigation.navigate('FindPlayers')}
             />
           </View>
         </View>

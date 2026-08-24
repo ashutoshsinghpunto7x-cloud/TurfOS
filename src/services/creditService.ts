@@ -63,7 +63,6 @@ export async function fetchCustomerCreditSummaries() {
     .order('outstanding', { ascending: false });
 
   if (error) {
-    console.warn('summary view missing:', error.message);
     return { summaries: [], error: error.message };
   }
 

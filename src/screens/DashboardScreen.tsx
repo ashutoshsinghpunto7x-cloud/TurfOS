@@ -2,7 +2,7 @@ import React, { useCallback, useState, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Animated, Easing,
-  Alert, Dimensions, Modal, Switch, TouchableWithoutFeedback,
+  Alert, Modal, Switch, TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -21,8 +21,9 @@ import { signOut } from '../services/authService';
 import { fetchDashboardMetrics, DashboardMetrics } from '../services/dashboardService';
 import { fetchPendingCount } from '../services/bookingRequestService';
 import { supabase } from '../lib/supabase';
+import { getClampedWindowWidth } from '../components/WebFrame';
 
-const { width: SW } = Dimensions.get('window');
+const SW = getClampedWindowWidth();
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
@@ -147,7 +148,10 @@ function WeekChart({ data, labels, onDayPress }: {
     Animated.timing(fadeAnim, { toValue: 1, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, [JSON.stringify(data)]);
 
-  const chartW = SW - 32 - 32 - Y_W;
+  // SW is captured once at module load and can momentarily be 0/near-0 on web
+  // before the window has laid out — floor it so the SVG never gets a negative
+  // width (which React DOM rejects and logs as an error).
+  const chartW = Math.max(SW - 32 - 32 - Y_W, 40);
   const max    = Math.max(...data, 1);
   const pts    = data.map((v, i) => ({ x: (i / (data.length - 1)) * chartW, y: (1 - v / max) * CHART_H }));
   const line   = buildBezier(pts);

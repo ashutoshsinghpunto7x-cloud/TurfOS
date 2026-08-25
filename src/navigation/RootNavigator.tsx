@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,12 +11,19 @@ import WelcomeScreen          from '../screens/WelcomeScreen';
 import LoginScreen            from '../screens/LoginScreen';
 import SignupScreen            from '../screens/SignupScreen';
 import CompleteProfileScreen  from '../screens/CompleteProfileScreen';
-import DrawerNavigator        from './DrawerNavigator';
-import StaffNavigator         from './StaffNavigator';
-import CustomerNavigator      from './CustomerNavigator';
-import BookingDetailScreen    from '../screens/BookingDetailScreen';
-import NewBookingScreen       from '../screens/NewBookingScreen';
-import CustomerDetailScreen   from '../screens/CustomerDetailScreen';
+
+// Lazy-load each role's screen tree as its own bundle chunk. Without this,
+// EVERY visitor — including a customer who only ever sees CustomerNavigator —
+// downloads and parses the owner's entire admin dashboard (reports, POS,
+// inventory, attendance, coupons, tournaments, ...) and the staff tree too,
+// before the login screen can even render. These three branches are mutually
+// exclusive by role, so splitting them is pure win with no UX downside.
+const DrawerNavigator        = React.lazy(() => import('./DrawerNavigator'));
+const StaffNavigator         = React.lazy(() => import('./StaffNavigator'));
+const CustomerNavigator      = React.lazy(() => import('./CustomerNavigator'));
+const BookingDetailScreen    = React.lazy(() => import('../screens/BookingDetailScreen'));
+const NewBookingScreen       = React.lazy(() => import('../screens/NewBookingScreen'));
+const CustomerDetailScreen   = React.lazy(() => import('../screens/CustomerDetailScreen'));
 
 export type RootStackParamList = {
   Welcome:         undefined;
@@ -32,6 +39,12 @@ export type RootStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const BootSpinner = () => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F3FF' }}>
+    <ActivityIndicator color="#7C4DFF" size="large" />
+  </View>
+);
 
 export default function RootNavigator() {
   const { profile, profileMissing, setProfile, isOwnerOrAdmin } = useStore();
@@ -87,15 +100,15 @@ export default function RootNavigator() {
   }, []);
 
   if (booting) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F3FF' }}>
-        <ActivityIndicator color="#7C4DFF" size="large" />
-      </View>
-    );
+    return <BootSpinner />;
   }
 
   return (
     <NavigationContainer>
+      {/* Suspense boundary for the lazy-loaded role trees above — the same
+          spinner used while auth is booting doubles as the "loading this
+          role's screens" fallback, so there's no jarring UI swap. */}
+      <Suspense fallback={<BootSpinner />}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
 
         {!profile && !profileMissing ? (
@@ -129,6 +142,7 @@ export default function RootNavigator() {
         )}
 
       </Stack.Navigator>
+      </Suspense>
     </NavigationContainer>
   );
 }

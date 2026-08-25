@@ -13,6 +13,20 @@ function normalizeEmail(raw: string): string {
   return (raw ?? '').trim().toLowerCase();
 }
 
+// ── Network timeout guard ───────────────────────────────────────────────────
+// On flaky connections `fetch` can hang indefinitely without ever resolving OR
+// rejecting — no error, no timeout, nothing. Without this, a screen that does
+// `setLoading(true); await signIn...; setLoading(false)` gets stuck on its
+// spinner forever with no way out. Racing every network call against a hard
+// timeout guarantees signIn/signUp/reset always settle one way or another.
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, timeoutMessage: string): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), ms)),
+  ]);
+}
+const NETWORK_TIMEOUT_MSG = 'Network timeout. Please check your connection and try again.';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sign Up
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,13 +41,17 @@ export async function signUpCustomer(params: {
   const role  = params.role ?? 'customer';
 
   // Step 1: Create Supabase auth user
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password: params.password, // NEVER trim password
-    options: {
-      data: { full_name: params.fullName.trim(), role },
-    },
-  });
+  const { data, error } = await withTimeout(
+    supabase.auth.signUp({
+      email,
+      password: params.password, // NEVER trim password
+      options: {
+        data: { full_name: params.fullName.trim(), role },
+      },
+    }),
+    15000,
+    NETWORK_TIMEOUT_MSG,
+  );
 
   if (error) {
     const msg = error.message.toLowerCase();
@@ -107,11 +125,15 @@ export async function signInWithEmail(
   if (!email)    return { profile: null, error: 'Please enter your email address.' };
   if (!password) return { profile: null, error: 'Please enter your password.' };
 
-  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-    // IMPORTANT: Do NOT trim/modify the password string in any way
-  });
+  const { data: authData, error: authError } = await withTimeout(
+    supabase.auth.signInWithPassword({
+      email,
+      password,
+      // IMPORTANT: Do NOT trim/modify the password string in any way
+    }),
+    15000,
+    NETWORK_TIMEOUT_MSG,
+  );
 
   if (authError || !authData.session) {
     const msg = (authError?.message ?? '').toLowerCase();
@@ -248,10 +270,19 @@ export async function getExistingSession(): Promise<{
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 export async function getProfileByUserId(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase
-    .from('profiles').select('id, full_name, email, role').eq('id', userId).single();
-  if (error || !data) return null;
-  return { id: data.id, full_name: data.full_name ?? '', role: data.role };
+  try {
+    const { data, error } = await withTimeout(
+      supabase.from('profiles').select('id, full_name, email, role').eq('id', userId).single(),
+      10000,
+      NETWORK_TIMEOUT_MSG,
+    );
+    if (error || !data) return null;
+    return { id: data.id, full_name: data.full_name ?? '', role: data.role };
+  } catch {
+    // Timed out or network failure — caller treats a missing profile as
+    // "not signed in yet" rather than hanging forever.
+    return null;
+  }
 }
 
 export async function signOut(): Promise<void> {
@@ -259,8 +290,16 @@ export async function signOut(): Promise<void> {
 }
 
 export async function sendPasswordResetEmail(email: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email));
-  return { error: error?.message ?? null };
+  try {
+    const { error } = await withTimeout(
+      supabase.auth.resetPasswordForEmail(normalizeEmail(email)),
+      15000,
+      NETWORK_TIMEOUT_MSG,
+    );
+    return { error: error?.message ?? null };
+  } catch (err: any) {
+    return { error: err?.message ?? NETWORK_TIMEOUT_MSG };
+  }
 }
 
 export async function saveUserRole(userId: string, role: AppRole): Promise<{ error: string | null }> {

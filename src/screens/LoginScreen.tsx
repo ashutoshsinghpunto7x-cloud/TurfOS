@@ -94,24 +94,36 @@ export default function LoginScreen() {
     if (!e)        { setErrorMsg('Please enter your email address.'); return; }
     if (!password) { setErrorMsg('Please enter your password.'); return; }
     setLoading(true);
-    const result = await signInWithEmail(e, password);
-    setLoading(false);
-    if (result.error || !result.profile) {
-      setErrorMsg(result.error ?? 'Could not sign in. Please try again.');
-      return;
+    try {
+      const result = await signInWithEmail(e, password);
+      if (result.error || !result.profile) {
+        setErrorMsg(result.error ?? 'Could not sign in. Please try again.');
+        return;
+      }
+      setProfile(result.profile);
+    } catch (err: any) {
+      // Network failure, timeout, or any unexpected error — without this catch
+      // the spinner would freeze forever with no way for the user to retry.
+      setErrorMsg(err?.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    setProfile(result.profile);
   };
 
   const handleForgot = async () => {
     const e = forgotEmail.trim().toLowerCase();
     if (!e) { Alert.alert('Required', 'Enter your email address.'); return; }
     setForgotLoading(true);
-    const { error } = await sendPasswordResetEmail(e);
-    setForgotLoading(false);
-    if (error) { Alert.alert('Error', error); return; }
-    Alert.alert('Link Sent', `A password reset link was sent to ${e}.\nCheck your inbox (and spam folder).`);
-    setForgotMode(false); setForgotEmail('');
+    try {
+      const { error } = await sendPasswordResetEmail(e);
+      if (error) { Alert.alert('Error', error); return; }
+      Alert.alert('Link Sent', `A password reset link was sent to ${e}.\nCheck your inbox (and spam folder).`);
+      setForgotMode(false); setForgotEmail('');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   return (

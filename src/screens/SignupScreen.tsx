@@ -130,28 +130,35 @@ export default function SignupScreen() {
 
   const handleSubmit = async () => {
     setLoading(true);
-    const { profile, error } = await signUpCustomer({
-      email:    email.trim().toLowerCase(),
-      password,
-      fullName: fullName.trim(),
-      role:     'customer',
-    });
-    setLoading(false);
+    try {
+      const { profile, error } = await signUpCustomer({
+        email:    email.trim().toLowerCase(),
+        password,
+        fullName: fullName.trim(),
+        role:     'customer',
+      });
 
-    if (error === 'CONFIRM_EMAIL') {
-      Alert.alert(
-        '📧 Verify Your Email',
-        `A confirmation link was sent to:\n${email.trim().toLowerCase()}\n\nClick the link in your inbox, then sign in.${role !== 'customer' ? `\n\nAfter signing in, contact your turf owner to have your role updated to ${role}.` : ''}`,
-        [{ text: 'Go to Sign In', onPress: () => navigation.navigate('Login') }],
-      );
-      return;
+      if (error === 'CONFIRM_EMAIL') {
+        Alert.alert(
+          '📧 Verify Your Email',
+          `A confirmation link was sent to:\n${email.trim().toLowerCase()}\n\nClick the link in your inbox, then sign in.${role !== 'customer' ? `\n\nAfter signing in, contact your turf owner to have your role updated to ${role}.` : ''}`,
+          [{ text: 'Go to Sign In', onPress: () => navigation.navigate('Login') }],
+        );
+        return;
+      }
+      if (error) { Alert.alert('Signup Failed', error); return; }
+      if (!profile) { Alert.alert('Error', 'Could not create your account. Please try again.'); return; }
+      if (role !== 'customer') {
+        Alert.alert('✓ Account Created!', `Your account was created.\n\nAsk your turf owner to promote your role to ${role} after you sign in.`);
+      }
+      setProfile(profile);
+    } catch (err: any) {
+      // Without this catch, a network hiccup or timeout would leave the
+      // spinner frozen forever with no way for the user to retry.
+      Alert.alert('Error', err?.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    if (error) { Alert.alert('Signup Failed', error); return; }
-    if (!profile) { Alert.alert('Error', 'Could not create your account. Please try again.'); return; }
-    if (role !== 'customer') {
-      Alert.alert('✓ Account Created!', `Your account was created.\n\nAsk your turf owner to promote your role to ${role} after you sign in.`);
-    }
-    setProfile(profile);
   };
 
   const stepTitle = step === 'details' ? 'Create Account' : 'Choose Your Role';

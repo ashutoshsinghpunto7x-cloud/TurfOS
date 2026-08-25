@@ -195,7 +195,7 @@ function OwnerDrawer() {
         name="Tournaments"
         component={TournamentsScreen}
         options={{
-          title: 'Tournaments',
+          title: 'Match Scheduling',
           drawerIcon: () => <Text>🏆</Text>,
         }}
       />
@@ -237,7 +237,7 @@ function OwnerDrawer() {
         name="TournamentDetail"
         component={TournamentDetailScreen}
         options={{
-          title: 'Tournament Detail',
+          title: 'Match Details',
           drawerIcon: () => <Text>🏆</Text>,
           drawerItemStyle: { display: 'none' },
         }}

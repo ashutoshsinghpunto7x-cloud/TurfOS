@@ -314,7 +314,7 @@ function SettingsModal({ visible, onClose, ownerId, navigation, onSignOut }: {
     { icon: '📋', label: 'Pending Approvals', route: 'PendingApprovals' },
     { icon: '👥', label: 'Customers',         route: 'Customers' },
     { icon: '🏷️', label: 'Coupon Codes',      route: 'Coupons' },
-    { icon: '🏆', label: 'Tournaments',       route: 'Tournaments' },
+    { icon: '🏆', label: 'Match Scheduling',  route: 'Tournaments' },
     { icon: '📊', label: 'Reports',           route: 'Reports' },
     { icon: '⚙️', label: 'Settings',          route: 'Settings' },
   ];
@@ -469,7 +469,7 @@ export default function DashboardScreen() {
     { icon: <Calendar      size={22} color={T.blue}   />, tint: T.blueSf,   label: 'Bookings',    route: 'Calendar' },
     { icon: <PlusCircle    size={22} color={T.green}  />, tint: T.greenSf,  label: 'New Booking', route: 'NewBooking' },
     { icon: <Users         size={22} color={T.purple} />, tint: T.purple15,  label: 'Customers',   route: 'Customers' },
-    { icon: <Trophy        size={22} color={T.amber}  />, tint: T.amberSf,  label: 'Tournaments', route: 'Tournaments' },
+    { icon: <Trophy        size={22} color={T.amber}  />, tint: T.amberSf,  label: 'Matches',     route: 'Tournaments' },
     { icon: <Package       size={22} color={T.teal}   />, tint: T.tealSf,   label: 'Inventory',   route: 'Inventory' },
     { icon: <BarChart2     size={22} color={T.pink}   />, tint: T.pinkSf,   label: 'Reports',     route: 'Reports' },
     { icon: <Tag           size={22} color={T.orange} />, tint: T.orangeSf, label: 'Coupons',     route: 'Coupons' },

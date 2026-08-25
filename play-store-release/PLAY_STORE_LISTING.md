@@ -26,7 +26,7 @@ Playbox is the all-in-one platform for booking and managing sports turf/ground t
 • Run a built-in Point-of-Sale (POS) for on-site sales and rentals
 • Track inventory, customer credit ledgers, and generate reports
 • Create and manage coupons and promotions
-• Organize tournaments and track live match scores
+• Schedule internal matches/leagues and track live scores
 • Mark and monitor staff attendance
 • Role-based access for Owners, Admins, and Staff — everyone sees exactly what they need
 

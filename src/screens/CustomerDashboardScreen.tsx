@@ -294,9 +294,9 @@ export default function CustomerDashboardScreen() {
           </View>
           <View style={s.gridRow}>
             <QuickCard
-              icon="🏆" title="Tournaments" sub="2 Live Events"
+              icon="🏆" title="Matches" sub="2 Live Now"
               tint={T.orange}
-              onPress={() => Alert.alert('Tournaments', 'Live tournament listings coming soon!')}
+              onPress={() => Alert.alert('Matches', 'Live match listings coming soon!')}
             />
             <QuickCard
               icon="👥" title="Find Players" sub="Post & Connect"

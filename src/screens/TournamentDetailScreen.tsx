@@ -193,7 +193,7 @@ export default function TournamentDetailScreen() {
   // ── Status advance ────────────────────────────────────────────────────────
 
   const STATUS_NEXT: Record<string, string> = {
-    draft: 'Open Registration', registration: 'Start Tournament', ongoing: 'Complete Tournament',
+    draft: 'Open Team Sign-up', registration: 'Start Match', ongoing: 'Complete Match',
   };
   const handleStatusAdvance = async () => {
     if (!tournament) return;

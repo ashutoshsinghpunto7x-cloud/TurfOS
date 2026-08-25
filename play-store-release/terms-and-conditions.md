@@ -7,10 +7,12 @@ Please read these Terms and Conditions ("Terms") carefully before using the Play
 By creating an account or using the App, you agree to be bound by these Terms. If you disagree with any part, please do not use the App.
 
 ## 1. Description of Service
-Playbox is a turf/sports ground booking and management platform. Depending on your role, the App allows you to:
+Playbox is a turf/sports ground slot booking and venue management platform. Depending on your role, the App allows you to:
 - **Customers**: browse available slots, request/make bookings, and pay online (via Razorpay) or offline.
-- **Owners/Admins**: manage turfs, bookings, customers, point-of-sale (POS) transactions, inventory, credit ledgers, coupons, tournaments, and reports.
+- **Owners/Admins**: manage turfs, bookings, customers, point-of-sale (POS) transactions, inventory, credit ledgers, coupons, internal match/league scheduling, and reports.
 - **Staff**: manage day-to-day bookings, process sales, and mark attendance.
+
+The only service for which the App collects online payment (via Razorpay) is turf/ground slot booking. Internal match and league scheduling tools are administrative features for venue owners and do not involve online ticket sales, event registration, or entry-fee collection through the App.
 
 ## 2. Accounts
 - You must provide accurate, current information when creating an account (full name and email address).

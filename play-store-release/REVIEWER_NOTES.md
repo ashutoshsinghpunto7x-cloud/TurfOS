@@ -4,11 +4,11 @@
 Playbox is a role-based booking and management platform for sports turf/ground facilities. It serves three types of users in one app:
 - **Customers** who want to browse and book available time slots for a turf.
 - **Staff** who manage day-to-day bookings and point-of-sale at a specific turf.
-- **Owners/Admins** who manage the full business: turfs, bookings, staff, inventory, customer credit, coupons, tournaments, and reports.
+- **Owners/Admins** who manage the full business: turfs, bookings, staff, inventory, customer credit, coupons, internal match/league scheduling, and reports.
 
 ## How to Test
 1. See [APP_ACCESS.md](APP_ACCESS.md) for demo credentials for all three roles — please use these rather than creating a new account, since new signups default to the `customer` role only and staff/owner roles require manual approval inside the app.
-2. Sign in as **Owner** first to see the full feature set: Dashboard → Bookings/Calendar → POS → Inventory → Credit → Reports → Tournaments → Coupon Management → Settings.
+2. Sign in as **Owner** first to see the full feature set: Dashboard → Bookings/Calendar → POS → Inventory → Credit → Reports → Match Scheduling → Coupon Management → Settings.
 3. Sign out, sign in as **Staff** to see the scoped-down Bookings/Sales/Attendance experience.
 4. Sign out, sign in as **Customer** to see the booking-only experience: browse slots on the calendar, submit a booking request, and (optionally) test payment.
 

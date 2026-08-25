@@ -110,7 +110,7 @@ export default function TournamentsScreen() {
 
   const handleDelete = (t: Tournament) => {
     Alert.alert(
-      'Delete Tournament',
+      'Delete Match',
       `Delete "${t.name}"? This will remove all teams, fixtures, and match data.`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -131,7 +131,7 @@ export default function TournamentsScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
           <Text style={s.backText}>‹</Text>
         </TouchableOpacity>
-        <Text style={s.title}>Tournaments</Text>
+        <Text style={s.title}>Match Scheduling</Text>
         <TouchableOpacity style={s.addBtn} onPress={() => setCreateModal(true)}>
           <Text style={s.addBtnText}>+ New</Text>
         </TouchableOpacity>
@@ -142,10 +142,10 @@ export default function TournamentsScreen() {
       ) : tournaments.length === 0 ? (
         <View style={s.emptyWrap}>
           <Text style={s.emptyIcon}>🏆</Text>
-          <Text style={s.emptyTitle}>No Tournaments Yet</Text>
-          <Text style={s.emptySub}>Create your first tournament to get started</Text>
+          <Text style={s.emptyTitle}>No Matches Yet</Text>
+          <Text style={s.emptySub}>Create your first match to get started</Text>
           <TouchableOpacity style={s.emptyBtn} onPress={() => setCreateModal(true)}>
-            <Text style={s.emptyBtnText}>+ Create Tournament</Text>
+            <Text style={s.emptyBtnText}>+ Create Match</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -189,10 +189,10 @@ export default function TournamentsScreen() {
                     style={[s.saveBtn, t.is_saved && s.saveBtnSaved]}
                     onPress={() => {
                       Alert.alert(
-                        t.is_saved ? 'Already Saved' : 'Save Tournament',
+                        t.is_saved ? 'Already Saved' : 'Save Match',
                         t.is_saved
-                          ? 'This tournament is already saved permanently.'
-                          : 'Save this tournament so customers can always see it in history?',
+                          ? 'This match is already saved permanently.'
+                          : 'Save this match so customers can always see it in history?',
                         [
                           { text: 'Cancel', style: 'cancel' },
                           {
@@ -222,14 +222,14 @@ export default function TournamentsScreen() {
         </ScrollView>
       )}
 
-      {/* Create Tournament Modal */}
+      {/* Create Match Modal */}
       <Modal visible={createModal} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <ScrollView contentContainerStyle={s.modalSheet} keyboardShouldPersistTaps="handled">
             <View style={s.modalHandle} />
-            <Text style={s.modalTitle}>Create Tournament</Text>
+            <Text style={s.modalTitle}>Create Match</Text>
 
-            <Text style={s.fieldLabel}>Tournament Name *</Text>
+            <Text style={s.fieldLabel}>Match Name *</Text>
             <TextInput style={s.input} value={name} onChangeText={setName}
               placeholder="e.g. Playbox Premier League" placeholderTextColor={colors.text3} />
 
@@ -316,7 +316,7 @@ export default function TournamentsScreen() {
             <Text style={s.fieldLabel}>Description (optional)</Text>
             <TextInput style={[s.input, { height: 80, textAlignVertical: 'top' }]}
               value={description} onChangeText={setDescription}
-              placeholder="Tournament description or rules" placeholderTextColor={colors.text3}
+              placeholder="Match description or rules" placeholderTextColor={colors.text3}
               multiline />
 
             <TouchableOpacity
@@ -326,7 +326,7 @@ export default function TournamentsScreen() {
             >
               {saving
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={s.createBtnText}>Create Tournament</Text>}
+                : <Text style={s.createBtnText}>Create Match</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity style={s.cancelBtn} onPress={() => { setCreateModal(false); resetForm(); }}>

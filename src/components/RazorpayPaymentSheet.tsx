@@ -31,6 +31,7 @@ interface Props {
   amountLabel:       string;       // e.g. "₹200 (Advance)"
   bookingRequestId?: string;
   bookingId?:        string;
+  idempotencyKey?:   string;   // same key across retries of the same attempt — see razorpayService.ts
   customerName:      string;
   customerEmail?:    string;
   customerPhone:     string;
@@ -56,6 +57,7 @@ export default function RazorpayPaymentSheet({
   amountLabel,
   bookingRequestId,
   bookingId,
+  idempotencyKey,
   customerName,
   customerEmail,
   customerPhone,
@@ -95,6 +97,7 @@ export default function RazorpayPaymentSheet({
         amountPaise,
         bookingRequestId,
         bookingId,
+        idempotencyKey,
         notes: {
           description,
           customer: customerName,

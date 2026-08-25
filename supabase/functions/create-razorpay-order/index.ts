@@ -64,6 +64,7 @@ serve(async (req) => {
       amount_paise,
       currency = 'INR',
       notes,
+      idempotency_key,
     } = body;
 
     if (
@@ -80,6 +81,56 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
+    }
+
+    // ── 2b. Idempotency check — same attempt being retried? ─────────────────
+    // idempotency_key is a stable client-generated id for THIS booking attempt
+    // (e.g. customer+slot+date — see BookingRequestModal.tsx). It exists
+    // specifically for the advance-payment flow, where the order is created
+    // BEFORE any booking_request/booking row exists, so the checks below
+    // (keyed on booking_request_id / booking_id) can't run yet. Without this,
+    // a double-tap, a network drop right after the charge, or "Try Again"
+    // after a false failure would each mint a brand-new Razorpay order and
+    // could charge the customer twice for the same slot.
+    const RETRY_REUSE_WINDOW_MS = 20 * 60 * 1000; // 20 minutes
+
+    if (idempotency_key && typeof idempotency_key === 'string') {
+      const { data: priorAttempt } = await supabase
+        .from('razorpay_payments')
+        .select('*')
+        .eq('idempotency_key', idempotency_key)
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (priorAttempt) {
+        const prior = priorAttempt as any;
+
+        if (prior.status === 'paid') {
+          return new Response(
+            JSON.stringify({ error: 'This booking attempt has already been paid for.' }),
+            { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+
+        const ageMs = Date.now() - new Date(prior.created_at).getTime();
+        if (prior.status === 'created' && ageMs < RETRY_REUSE_WINDOW_MS) {
+          // Re-serve the SAME order instead of minting a new one — if the first
+          // attempt's payment is still in flight (e.g. checkout still open in
+          // another tab, or the client retried after a transient network error),
+          // this guarantees only one Razorpay order can ever be paid for this key.
+          return new Response(
+            JSON.stringify({
+              order_id: prior.razorpay_order_id,
+              amount:   prior.amount_paise,
+              currency: prior.currency,
+              key_id:   RAZORPAY_KEY_ID,
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+      }
     }
 
     // ── 3. Verify booking belongs to this user (optional for now) ──────────
@@ -220,6 +271,7 @@ serve(async (req) => {
         amount_paise,
         currency,
         status: 'created',
+        idempotency_key: idempotency_key ?? null,
       });
 
     if (dbError) {

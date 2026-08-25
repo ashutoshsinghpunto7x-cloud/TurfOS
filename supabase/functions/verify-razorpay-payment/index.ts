@@ -131,7 +131,11 @@ serve(async (req) => {
     }
 
     // ── 8. All checks passed — mark as paid in our DB ─────────────────────
-    const { error: updateErr } = await supabase
+    // Guard the WHERE clause on status = 'created': if a concurrent verify call
+    // for this exact order (double-tap, duplicate webhook, retried request) won
+    // the race and already flipped this row to 'paid', this update matches zero
+    // rows instead of running the booking-side effects (step 9) a second time.
+    const { data: updatedRows, error: updateErr } = await supabase
       .from('razorpay_payments')
       .update({
         razorpay_payment_id,
@@ -140,9 +144,21 @@ serve(async (req) => {
         verified_at: new Date().toISOString(),
         updated_at:  new Date().toISOString(),
       })
-      .eq('razorpay_order_id', razorpay_order_id);
+      .eq('razorpay_order_id', razorpay_order_id)
+      .eq('status', 'created')
+      .select('id');
 
     if (updateErr) throw updateErr;
+
+    if (!updatedRows || updatedRows.length === 0) {
+      // Someone else (a concurrent request) already marked this order paid
+      // between our check in step 4 and this update — treat as success without
+      // re-running the booking_request/booking side effects below.
+      return new Response(
+        JSON.stringify({ success: true, message: 'Already verified.', already_paid: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // ── 9. Update booking_request / booking status ─────────────────────────
     const pr = paymentRecord as any;

@@ -35,6 +35,7 @@ export interface SubmitBookingRequestParams {
   bookingSourceRole: string;
   createdBy:         string | null;
   advanceAmount?:    number;
+  finalAmount?:      number;
 }
 
 function toRequest(row: any): BookingRequest {
@@ -130,8 +131,8 @@ export async function submitBookingRequest(params: SubmitBookingRequestParams): 
   autoBooked: boolean;
   error:      string | null;
 }> {
-  // ⚠️  To enforce a fixed advance amount, replace the line below with: const advance = 200;
   const advance = params.advanceAmount ?? 0;
+  const finalAmount = params.finalAmount ?? 0;
 
   let autoBook = false;
   // Staff/owner bookings are always instant regardless of payment method or approval mode
@@ -176,7 +177,7 @@ export async function submitBookingRequest(params: SubmitBookingRequestParams): 
         field:               params.turf,
         booking_date:        params.bookingDate,
         status:              'Confirmed',
-        amount:              0,
+        amount:              finalAmount,
         paid:                false,
         advance_amount:      advance,
         sport:               params.sport,

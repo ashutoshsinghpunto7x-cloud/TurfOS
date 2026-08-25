@@ -8,6 +8,11 @@ export interface CreateOrderParams {
   bookingId?:         string;
   currency?:          string;
   notes?:             Record<string, string>;
+  // Stable key identifying this booking/payment attempt (e.g. customer+slot+date).
+  // Pass the SAME value on every retry of the same attempt — the backend uses it
+  // to detect retries and refuses to let the same attempt be paid for twice,
+  // even when a booking_request/booking row doesn't exist yet at order-creation time.
+  idempotencyKey?:    string;
 }
 
 export interface CreateOrderResult {
@@ -68,6 +73,7 @@ export async function createRazorpayOrder(
         booking_id:         params.bookingId,
         currency:           params.currency ?? 'INR',
         notes:              params.notes ?? {},
+        idempotency_key:    params.idempotencyKey,
       }),
     });
 

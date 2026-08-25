@@ -7,7 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useStore } from '../store/useStore';
-import { SportConfig, calculatePrice } from '../services/bookingService';
+import { SportConfig, calculatePrice, fetchBookingsForDate, parseSlotRange } from '../services/bookingService';
 import {
   submitBookingRequest, upsertCustomerPhone, fetchCustomerPhone,
   fetchOnlineApprovalMode,
@@ -22,6 +22,37 @@ import SportsDropdown from '../components/booking/SportsDropdown';
 import RazorpayPaymentSheet from '../components/RazorpayPaymentSheet';
 
 const QR_SOURCE = require('../../assets/payment_qr.png');
+
+// ── Slot-conflict helpers (cross-midnight aware, same logic as useBookingScreen) ──
+function normEnd(s: number, e: number): number { return e > s ? e : e + 1440; }
+function slotsOverlap(aS: number, aE: number, bS: number, bE: number): boolean {
+  const eA = normEnd(aS, aE), eB = normEnd(bS, bE);
+  return aS < eB && eA > bS;
+}
+
+/** Re-checks the live bookings table right before charging — guards against a stale
+ *  hold/UI state letting a customer pay for a slot someone else just confirmed. */
+async function isSlotStillFree(bookingDate: string, turf: string, slotLabel: string): Promise<boolean> {
+  const target = parseSlotRange(slotLabel);
+  if (!target) return true; // unparseable — don't block on our own bug
+  const { bookings } = await fetchBookingsForDate({ date: bookingDate, turf });
+  return !bookings.some((b) => {
+    const p = parseSlotRange(b.slot);
+    return !!p && slotsOverlap(target.startM, target.endM, p.startM, p.endM);
+  });
+}
+
+/** After a verified Razorpay payment, confirms the slot actually landed as a
+ *  'Confirmed' booking under THIS customer's id — not just that some insert succeeded. */
+async function verifyBookingBelongsToCustomer(
+  bookingDate: string, turf: string, slotLabel: string, customerId: string | null | undefined,
+): Promise<boolean> {
+  if (!customerId) return false;
+  const { bookings } = await fetchBookingsForDate({ date: bookingDate, turf });
+  return bookings.some((b) =>
+    b.status === 'Confirmed' && b.customer_id === customerId && b.slot === slotLabel,
+  );
+}
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -77,13 +108,12 @@ export default function BookingRequestModal({
   const [name, setName]                 = useState(prefillName ?? '');
   const [phone, setPhone]               = useState(prefillPhone ?? '');
   const [selectedSport, setSelectedSport] = useState<SportConfig | null>(null);
-  const [advanceAmtStr, setAdvanceAmtStr] = useState('200');
+  const [advanceAmtStr, setAdvanceAmtStr] = useState('100');
   const [slotPriceStr, setSlotPriceStr]   = useState('');
 
-  const [payMethod, setPayMethod] = useState<'cash' | 'online' | 'razorpay'>(isCustomer ? 'online' : 'cash');
+  const [payMethod, setPayMethod] = useState<'cash' | 'online' | 'razorpay'>(isCustomer ? 'razorpay' : 'cash');
 
-  const [razorpaySheetVisible, setRazorpaySheetVisible]             = useState(false);
-  const [razorpayBookingRequestId, setRazorpayBookingRequestId]     = useState<string | undefined>(undefined);
+  const [razorpaySheetVisible, setRazorpaySheetVisible] = useState(false);
 
   const [screenshotUri, setScreenshotUri]   = useState<string | null>(null);
   const [screenshotMime, setScreenshotMime] = useState<string>('image/jpeg');
@@ -103,7 +133,7 @@ export default function BookingRequestModal({
     if (!visible || !profile?.id) return;
     fetchCustomerPhone(profile.id).then((p) => { if (p) setPhone(p); });
     fetchOnlineApprovalMode().then(setApprovalModeOn);
-    if (isCustomer) setPayMethod('online');
+    if (isCustomer) setPayMethod('razorpay');
   }, [visible, profile?.id, isCustomer]);
 
   useEffect(() => {
@@ -116,13 +146,23 @@ export default function BookingRequestModal({
   useEffect(() => {
     if (!visible) {
       setScreenshotUri(null); setSelectedSport(null); setSlotPriceStr('');
-      if (isCustomer) setPayMethod('online'); else setPayMethod('cash');
-      setRazorpaySheetVisible(false); setRazorpayBookingRequestId(undefined);
+      if (isCustomer) setPayMethod('razorpay'); else setPayMethod('cash');
+      setRazorpaySheetVisible(false);
       setCouponCode(''); setAppliedCoupon(null); setAppliedSentCoupon(null);
       setCouponMessage(''); setCouponMsgType(''); setDiscountAmount(0);
-      setAdvanceAmtStr('200');
+      setAdvanceAmtStr('100');
     }
   }, [visible, isCustomer]);
+
+  // Stable per-attempt key for Razorpay order de-duplication. Deliberately keyed
+  // by customer+slot+date (not a random id) so that retries — double-tap, a
+  // network drop after the charge went through, "Try Again" after a false
+  // failure, or even closing and reopening this modal for the same slot —
+  // all resolve to the SAME key and can never result in two successful charges
+  // for the same slot. See create-razorpay-order's idempotency_key handling.
+  const paymentIdempotencyKey = profile?.id
+    ? `bkreq:${profile.id}:${bookingDate}:${turf}:${slotLabel}`
+    : undefined;
 
   const basePrice    = parseInt(slotPriceStr) || 0;
   const advanceAmt   = parseInt(advanceAmtStr) || 0;
@@ -166,26 +206,50 @@ export default function BookingRequestModal({
     onClose();
   };
 
-  const handleSubmit = async () => {
-    if (!name.trim())   { Alert.alert('Required', 'Enter customer name.'); return; }
+  const validateCommonFields = (): boolean => {
+    if (!name.trim())   { Alert.alert('Required', 'Enter customer name.'); return false; }
     const digits = phone.replace(/\D/g, '');
-    if (digits.length !== 10) { Alert.alert('Required', 'Phone number must be exactly 10 digits.'); return; }
-    if (!selectedSport) { Alert.alert('Required', 'Select a sport.'); return; }
-    if (isCustomer && payMethod === 'online' && !screenshotUri) {
-      Alert.alert('Required', 'Please upload your payment screenshot.'); return;
+    if (digits.length !== 10) { Alert.alert('Required', 'Phone number must be exactly 10 digits.'); return false; }
+    if (!selectedSport) { Alert.alert('Required', 'Select a sport.'); return false; }
+    return true;
+  };
+
+  // Customer flow: charge via real Razorpay checkout FIRST — the booking is only
+  // created after the backend verifies the payment signature (see finalizeCustomerBooking).
+  const handleSubmit = async () => {
+    if (!validateCommonFields()) return;
+
+    if (isCustomer) {
+      // Re-verify the slot is still free right before charging — the hold can have
+      // expired, or another customer may have confirmed it while this form was open.
+      setSubmitting(true);
+      const free = await isSlotStillFree(bookingDate, turf, slotLabel);
+      setSubmitting(false);
+      if (!free) {
+        Alert.alert(
+          'Slot No Longer Available',
+          'This slot was just booked by someone else. Please go back and pick another time — you have not been charged.',
+        );
+        if (holdId) await releaseSlotHold(holdId);
+        onClose();
+        return;
+      }
+      setRazorpaySheetVisible(true);
+      return;
     }
-    if (payMethod === 'online' && !screenshotUri && isStaffOwner) {
+
+    if (payMethod === 'online' && !screenshotUri) {
       Alert.alert('Required', 'Please upload the payment screenshot.'); return;
     }
 
     setSubmitting(true);
     let screenshotUrl: string | null = null;
 
-    if (screenshotUri && profile?.id && payMethod === 'online') {
+    if (screenshotUri && payMethod === 'online') {
       setUploading(true);
       const mime = screenshotMime;
       const ext  = mime.split('/')[1] ?? 'jpg';
-      const path = `${profile!.id}/${Date.now()}.${ext}`;
+      const path = `${profile?.id ?? 'staff'}/${Date.now()}.${ext}`;
       const { url, error: uploadError } = await uploadFileToSupabase({
         fileUri: screenshotUri!, bucket: 'payment-screenshots',
         path, mimeType: mime, upsert: false,
@@ -198,10 +262,8 @@ export default function BookingRequestModal({
       screenshotUrl = url;
     }
 
-    if (profile?.id) await upsertCustomerPhone(profile.id, phone.trim());
-
     const { request, autoBooked, error } = await submitBookingRequest({
-      customerId:        isCustomer ? (profile?.id ?? null) : null,
+      customerId:        null,
       customerName:      name.trim(),
       phone:             phone.trim(),
       bookingDate, turf, slotLabel,
@@ -211,6 +273,7 @@ export default function BookingRequestModal({
       bookingSourceRole,
       createdBy:         profile?.id ?? null,
       advanceAmount:     advanceAmt,
+      finalAmount:       finalPrice,
     });
 
     setSubmitting(false);
@@ -232,10 +295,65 @@ export default function BookingRequestModal({
     else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
     if (holdId) await releaseSlotHold(holdId);
 
-    if (payMethod === 'razorpay') {
-      setRazorpayBookingRequestId(request.id);
-      setRazorpaySheetVisible(true);
-      setSubmitting(false); return;
+    onSuccess(autoBooked);
+  };
+
+  // Called by RazorpayPaymentSheet only after the backend has verified the
+  // payment signature (verify-razorpay-payment Edge Function) — never before.
+  const finalizeCustomerBooking = async (paymentId: string) => {
+    setSubmitting(true);
+    if (profile?.id) await upsertCustomerPhone(profile.id, phone.trim());
+
+    const { autoBooked, error } = await submitBookingRequest({
+      customerId:        profile?.id ?? null,
+      customerName:      name.trim(),
+      phone:             phone.trim(),
+      bookingDate, turf, slotLabel,
+      sport:             selectedSport!.key,
+      paymentMethod:     'razorpay',
+      screenshotUrl:     `rzp_verified:${paymentId}`,
+      bookingSourceRole,
+      createdBy:         profile?.id ?? null,
+      advanceAmount:     advanceAmt,
+      finalAmount:       finalPrice,
+    });
+
+    if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
+    else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
+    if (holdId) await releaseSlotHold(holdId);
+
+    if (error) {
+      setSubmitting(false);
+      setRazorpaySheetVisible(false);
+      // Payment is verified server-side already (this only runs after Razorpay's onSuccess),
+      // but the auto-book insert lost a race for the exact slot — DB unique constraint kicked
+      // in and the request was reverted to 'pending' for manual owner review.
+      Alert.alert(
+        'Payment Received',
+        `Your ₹${advanceAmt} payment is verified and safe, but this exact slot was taken moments ago. ` +
+        `Our team will confirm your booking on another slot or process a refund shortly.`,
+      );
+      onSuccess(false);
+      return;
+    }
+
+    // Payment succeeded AND the insert reported success — now do one more independent
+    // read to confirm the slot is really Confirmed under THIS customer's id before
+    // telling them "you're booked". Catches any edge case the insert path missed.
+    const verified = autoBooked
+      ? await verifyBookingBelongsToCustomer(bookingDate, turf, slotLabel, profile?.id)
+      : false;
+
+    setSubmitting(false);
+    setRazorpaySheetVisible(false);
+
+    if (autoBooked && !verified) {
+      Alert.alert(
+        'Payment Received — Confirming',
+        'Your payment is verified. We could not immediately confirm the slot assignment — our team will verify and confirm your booking shortly.',
+      );
+      onSuccess(false);
+      return;
     }
 
     onSuccess(autoBooked);
@@ -261,7 +379,7 @@ export default function BookingRequestModal({
 
           {isCustomer && (
             <View style={s.instantBanner}>
-              <Text style={s.instantTxt}>⚡  Instant Booking — Confirmed immediately after upload.</Text>
+              <Text style={s.instantTxt}>⚡  Instant Booking — Confirmed immediately after payment.</Text>
             </View>
           )}
 
@@ -285,19 +403,25 @@ export default function BookingRequestModal({
           {/* Price breakdown — editable */}
           {selectedSport && (
             <View style={s.priceCard}>
-              {/* Slot price (editable) */}
+              {/* Slot price — editable by staff/owner only; fixed for customers */}
               <View style={s.priceRow}>
                 <Text style={s.priceLabel}>Slot Price</Text>
-                <View style={s.priceEditWrap}>
-                  <Text style={s.rupee}>₹</Text>
-                  <TextInput
-                    style={[s.priceInput, (appliedCoupon || appliedSentCoupon) && s.strikeInput]}
-                    value={slotPriceStr}
-                    onChangeText={setSlotPriceStr}
-                    keyboardType="number-pad"
-                    selectTextOnFocus
-                  />
-                </View>
+                {isStaffOwner ? (
+                  <View style={s.priceEditWrap}>
+                    <Text style={s.rupee}>₹</Text>
+                    <TextInput
+                      style={[s.priceInput, (appliedCoupon || appliedSentCoupon) && s.strikeInput]}
+                      value={slotPriceStr}
+                      onChangeText={setSlotPriceStr}
+                      keyboardType="number-pad"
+                      selectTextOnFocus
+                    />
+                  </View>
+                ) : (
+                  <Text style={[s.priceVal, (appliedCoupon || appliedSentCoupon) && s.strikeInput]}>
+                    ₹{slotPriceStr}
+                  </Text>
+                )}
               </View>
 
               {(appliedCoupon || appliedSentCoupon) && (
@@ -313,22 +437,26 @@ export default function BookingRequestModal({
                 </>
               )}
 
-              {/* Advance amount (editable) */}
+              {/* Advance amount — editable by staff/owner only; fixed for customers */}
               <View style={[s.priceRow, s.advanceRow]}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.advanceLabel}>Advance Required</Text>
                   <Text style={s.advanceSub}>Collected upfront from customer</Text>
                 </View>
-                <View style={s.priceEditWrap}>
-                  <Text style={[s.rupee, { color: T.green }]}>₹</Text>
-                  <TextInput
-                    style={[s.priceInput, { color: T.green, minWidth: 54 }]}
-                    value={advanceAmtStr}
-                    onChangeText={setAdvanceAmtStr}
-                    keyboardType="number-pad"
-                    selectTextOnFocus
-                  />
-                </View>
+                {isStaffOwner ? (
+                  <View style={s.priceEditWrap}>
+                    <Text style={[s.rupee, { color: T.green }]}>₹</Text>
+                    <TextInput
+                      style={[s.priceInput, { color: T.green, minWidth: 54 }]}
+                      value={advanceAmtStr}
+                      onChangeText={setAdvanceAmtStr}
+                      keyboardType="number-pad"
+                      selectTextOnFocus
+                    />
+                  </View>
+                ) : (
+                  <Text style={[s.priceVal, { color: T.green }]}>₹{advanceAmtStr}</Text>
+                )}
               </View>
             </View>
           )}
@@ -385,7 +513,7 @@ export default function BookingRequestModal({
           <Text style={s.fieldLabel}>Payment Method</Text>
           {isCustomer ? (
             <View style={[s.methodBtn, s.methodBtnActive]}>
-              <Text style={[s.methodTxt, { color: T.purple }]}>📲  Online Payment Only</Text>
+              <Text style={[s.methodTxt, { color: T.purple }]}>🔒  Razorpay — Card / UPI / Netbanking</Text>
             </View>
           ) : (
             <View style={s.methodRow}>
@@ -403,10 +531,23 @@ export default function BookingRequestModal({
             </View>
           )}
 
-          {/* Online payment section */}
-          {payMethod === 'online' && (
+          {/* Customer: real Razorpay checkout — no manual upload, no dummy flow */}
+          {isCustomer && (
             <View style={s.onlineSection}>
-              {!isCustomer && !approvalModeOn && (
+              <View style={s.qrBox}>
+                <Text style={s.qrLabel}>Pay ₹{advanceAmt} Advance via Razorpay</Text>
+                <Text style={s.qrNote}>
+                  Tap the button below to open Razorpay Checkout. Your slot is confirmed instantly
+                  the moment the payment is verified — no screenshot needed.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Staff/Owner: cash-desk QR + screenshot flow */}
+          {isStaffOwner && payMethod === 'online' && (
+            <View style={s.onlineSection}>
+              {!approvalModeOn && (
                 <View style={s.instantBanner}>
                   <Text style={s.instantTxt}>⚡  Instant Booking — Confirmed immediately after payment.</Text>
                 </View>
@@ -442,7 +583,7 @@ export default function BookingRequestModal({
             <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.submitBtn}>
               {submitting || uploading
                 ? <ActivityIndicator color={T.white} />
-                : <Text style={s.submitTxt}>{isCustomer ? '⚡ Book Slot Instantly' : 'Submit Booking Request'}</Text>}
+                : <Text style={s.submitTxt}>{isCustomer ? `🔒 Pay ₹${advanceAmt} & Book` : 'Submit Booking Request'}</Text>}
             </LinearGradient>
           </TouchableOpacity>
 
@@ -456,11 +597,11 @@ export default function BookingRequestModal({
         visible={razorpaySheetVisible}
         amountPaise={advanceAmt * 100}
         amountLabel={`₹${advanceAmt} (Advance)`}
-        bookingRequestId={razorpayBookingRequestId}
+        idempotencyKey={paymentIdempotencyKey}
         customerName={name}
         customerPhone={phone}
         description={`${slotLabel} • ${turf} • ${bookingDate}`}
-        onSuccess={(_paymentId) => { setRazorpaySheetVisible(false); onSuccess(true); }}
+        onSuccess={(paymentId) => { finalizeCustomerBooking(paymentId); }}
         onFailure={(_error) => {}}
         onCancel={() => { setRazorpaySheetVisible(false); }}
         onClose={() => { setRazorpaySheetVisible(false); }}

@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { ActivityIndicator, View, Alert } from 'react-native';
+import { ActivityIndicator, View, Alert, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -49,7 +49,40 @@ const BootSpinner = () => (
 
 export default function RootNavigator() {
   const { profile, profileMissing, setProfile, isOwnerOrAdmin } = useStore();
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting]     = useState(true);
+  // A session exists and is valid, but we genuinely couldn't load its profile
+  // after retries (RLS hiccup, cold edge, brief outage) — NOT the same as "no
+  // profile" or "not signed in". Keeps the user's session intact and offers a
+  // retry instead of silently bouncing them to Welcome/CompleteProfile, which
+  // used to happen on any transient failure (see getProfileByUserId).
+  const [loadError, setLoadError] = useState(false);
+  const userIdRef = React.useRef<string | null>(null);
+
+  const resolveProfile = React.useCallback(async (userId: string, event: string) => {
+    userIdRef.current = userId;
+    try {
+      const restored = await getProfileByUserId(userId);
+      setLoadError(false);
+      if (restored) {
+        setProfile(restored);
+      } else {
+        // Confirmed (post-retry) — this user really has no profile row yet.
+        useStore.setState({ profileMissing: true });
+      }
+    } catch (err) {
+      // Retries in getProfileByUserId are already exhausted — this is a
+      // genuine, sustained failure. Don't touch profile/profileMissing: the
+      // session token is still valid, we just couldn't confirm the profile.
+      // Show a retry screen instead of losing the session or misrouting to
+      // "complete your profile".
+      console.error(`RootNavigator: profile load failed on ${event}:`, err);
+      setLoadError(true);
+    }
+  }, [setProfile]);
+
+  const retryProfileLoad = React.useCallback(() => {
+    if (userIdRef.current) resolveProfile(userIdRef.current, 'retry');
+  }, [resolveProfile]);
 
   useEffect(() => {
     let booted = false;
@@ -63,6 +96,8 @@ export default function RootNavigator() {
       async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
           setProfile(null);
+          setLoadError(false);
+          userIdRef.current = null;
           useStore.setState({ profileMissing: false });
           finish();
           return;
@@ -74,21 +109,7 @@ export default function RootNavigator() {
           return;
         }
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-          try {
-            const restored = await getProfileByUserId(session.user.id);
-            if (restored) {
-              setProfile(restored);
-            } else {
-              // Only mark profileMissing on SIGNED_IN (fresh login with no profile).
-              // On INITIAL_SESSION a network failure returns null — treat as
-              // unauthenticated so the user lands on Welcome, not CompleteProfile.
-              if (event === 'SIGNED_IN') useStore.setState({ profileMissing: true });
-              else setProfile(null);
-            }
-          } catch {
-            // Network error on restore — send to Welcome, not CompleteProfile
-            setProfile(null);
-          }
+          await resolveProfile(session.user.id, event);
           finish();
         }
       },
@@ -98,7 +119,7 @@ export default function RootNavigator() {
     const timeout = setTimeout(finish, 3000);
 
     return () => { subscription.unsubscribe(); clearTimeout(timeout); };
-  }, []);
+  }, [resolveProfile]);
 
   // Recover from a client crash/reload that happened mid-payment (see
   // pendingPaymentRecovery.ts) — runs once per app boot, after auth has
@@ -127,6 +148,26 @@ export default function RootNavigator() {
 
   if (booting) {
     return <BootSpinner />;
+  }
+
+  if (loadError && !profile) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F3FF', padding: 24 }}>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 8, textAlign: 'center' }}>
+          Couldn't load your profile
+        </Text>
+        <Text style={{ fontSize: 13, color: '#7B7B8A', textAlign: 'center', marginBottom: 20, lineHeight: 19 }}>
+          You're still signed in — this is just a connection hiccup. Tap retry to continue.
+        </Text>
+        <TouchableOpacity
+          onPress={retryProfileLoad}
+          activeOpacity={0.85}
+          style={{ backgroundColor: '#7C4DFF', paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12 }}
+        >
+          <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   return (

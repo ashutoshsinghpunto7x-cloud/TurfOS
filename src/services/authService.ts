@@ -269,20 +269,42 @@ export async function getExistingSession(): Promise<{
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// Returns null ONLY when we're sure the profile genuinely doesn't exist
+// (PostgREST's PGRST116 — .single() matched zero rows). Any other failure
+// (RLS error, dropped connection, timeout) THROWS instead of collapsing to
+// null — callers used to treat "couldn't check" the same as "confirmed
+// missing", which meant a transient network blip during session restore
+// looked identical to a brand-new user with no profile: it silently signed
+// people out (or dumped them on "complete your profile") even though their
+// session and profile were both perfectly fine. See RootNavigator's retry
+// handling for how the distinction is used.
 export async function getProfileByUserId(userId: string): Promise<UserProfile | null> {
-  try {
-    const { data, error } = await withTimeout(
-      supabase.from('profiles').select('id, full_name, email, role').eq('id', userId).single(),
-      10000,
-      NETWORK_TIMEOUT_MSG,
-    );
-    if (error || !data) return null;
-    return { id: data.id, full_name: data.full_name ?? '', role: data.role };
-  } catch {
-    // Timed out or network failure — caller treats a missing profile as
-    // "not signed in yet" rather than hanging forever.
-    return null;
+  // A couple of quick retries absorb the kind of transient blip that's common
+  // right after a payment app hand-off or a cold Vercel/Supabase edge — without
+  // this, every caller (login, session restore) would have to reimplement its
+  // own retry loop to avoid misreading "network hiccup" as "no profile".
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('profiles').select('id, full_name, email, role').eq('id', userId).single(),
+        10000,
+        NETWORK_TIMEOUT_MSG,
+      );
+      if (error) {
+        if ((error as any).code === 'PGRST116') return null;   // confirmed: no such row
+        throw error;
+      }
+      if (!data) return null;
+      return { id: data.id, full_name: data.full_name ?? '', role: data.role };
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+    }
   }
+  // Exhausted retries — genuinely couldn't tell. Throw rather than returning
+  // null so callers don't confuse "couldn't check" with "confirmed missing".
+  throw lastErr;
 }
 
 export async function signOut(): Promise<void> {

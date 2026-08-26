@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Updates from 'expo-updates';
 import RootNavigator from './src/navigation/RootNavigator';
 import WebFrame from './src/components/WebFrame';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 function useOTAUpdate() {
   useEffect(() => {
@@ -55,7 +56,9 @@ export default function App() {
       <WebFrame>
         <SafeAreaProvider>
           <StatusBar style="dark" />
-          <RootNavigator />
+          <ErrorBoundary>
+            <RootNavigator />
+          </ErrorBoundary>
         </SafeAreaProvider>
       </WebFrame>
     </GestureHandlerRootView>

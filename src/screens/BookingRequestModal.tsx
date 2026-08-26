@@ -20,6 +20,7 @@ import {
 import { uploadFileToSupabase, mimeFromUri } from '../utils/uploadHelper';
 import SportsDropdown from '../components/booking/SportsDropdown';
 import RazorpayPaymentSheet from '../components/RazorpayPaymentSheet';
+import { savePendingPayment, clearPendingPayment } from '../services/pendingPaymentRecovery';
 
 const QR_SOURCE = require('../../assets/payment_qr.png');
 
@@ -253,6 +254,12 @@ export default function BookingRequestModal({
           return;
         }
 
+        // Persist before checkout opens — on web, the payment handoff (especially
+        // UPI/banking-app intents on Android Chrome) can crash or kill the tab
+        // after the charge succeeds but before this session hears about it. See
+        // pendingPaymentRecovery.ts for how this gets reconciled on next boot.
+        await savePendingPayment({ id, bookingDate, turf, slotLabel });
+
         setPendingRequestId(id);
         setRazorpaySheetVisible(true);
       } catch (err) {
@@ -388,6 +395,10 @@ export default function BookingRequestModal({
     } finally {
       setSubmitting(false);
       setRazorpaySheetVisible(false);
+      // Outcome has been resolved and shown to the user (or the server will
+      // finalize it independently via the webhook either way) — nothing left
+      // to recover on next boot.
+      await clearPendingPayment();
     }
   };
 
@@ -635,8 +646,8 @@ export default function BookingRequestModal({
         customerPhone={phone}
         description={`${slotLabel} • ${turf} • ${bookingDate}`}
         onSuccess={(paymentId) => { finalizeCustomerBooking(paymentId); }}
-        onFailure={(_error) => {}}
-        onCancel={() => { setRazorpaySheetVisible(false); }}
+        onFailure={(_error) => { clearPendingPayment(); }}
+        onCancel={() => { setRazorpaySheetVisible(false); clearPendingPayment(); }}
         onClose={() => { setRazorpaySheetVisible(false); }}
       />
     </Modal>

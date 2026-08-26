@@ -1,11 +1,12 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Alert } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { useStore } from '../store/useStore';
 import { getExistingSession, getProfileByUserId } from '../services/authService';
 import { supabase } from '../lib/supabase';
+import { recoverPendingPayment } from '../services/pendingPaymentRecovery';
 
 import WelcomeScreen          from '../screens/WelcomeScreen';
 import LoginScreen            from '../screens/LoginScreen';
@@ -98,6 +99,31 @@ export default function RootNavigator() {
 
     return () => { subscription.unsubscribe(); clearTimeout(timeout); };
   }, []);
+
+  // Recover from a client crash/reload that happened mid-payment (see
+  // pendingPaymentRecovery.ts) — runs once per app boot, after auth has
+  // settled, so a customer who gets dumped back to a crashed/blank tab right
+  // after paying sees a real answer next time the app opens instead of
+  // silence. No-ops instantly if there's nothing to recover.
+  useEffect(() => {
+    if (booting || !profile?.id) return;
+    let cancelled = false;
+    (async () => {
+      const result = await recoverPendingPayment();
+      if (cancelled || !result) return;
+      const { status } = result;
+      if (status === 'approved') {
+        Alert.alert('✓ Booking Confirmed', 'Good news — your last booking payment went through and your slot is confirmed.');
+      } else if (status === 'rejected') {
+        Alert.alert('Booking Not Confirmed', 'Your last payment could not be matched to a confirmed slot. If you were charged, contact support and we\'ll sort it out.');
+      } else {
+        // 'pending' or 'unknown' — still resolvable server-side (manual review
+        // or the webhook hasn't landed yet). Don't alarm the user; keep it light.
+        Alert.alert('Checking Your Last Booking', 'Your last payment is still being confirmed. Check your Bookings tab shortly — if it doesn\'t show up, contact support.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [booting, profile?.id]);
 
   if (booting) {
     return <BootSpinner />;

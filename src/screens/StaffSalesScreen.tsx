@@ -70,11 +70,16 @@ export default function StaffSalesScreen() {
     let active = true;
     (async () => {
       setLoadingItems(true);
-      const itemsRes = await fetchPOSItems();
-      if (!active) return;
-      if (itemsRes.error) Alert.alert('Load Error', itemsRes.error);
-      else setItems(itemsRes.items);
-      setLoadingItems(false);
+      try {
+        const itemsRes = await fetchPOSItems();
+        if (!active) return;
+        if (itemsRes.error) Alert.alert('Load Error', itemsRes.error);
+        else setItems(itemsRes.items);
+      } catch (err) {
+        console.error('StaffSalesScreen items load failed:', err);
+      } finally {
+        if (active) setLoadingItems(false);
+      }
     })();
     return () => { active = false; };
   }, []));
@@ -101,17 +106,23 @@ export default function StaffSalesScreen() {
   const handleConfirmSale = async () => {
     if (cartEntries.length === 0) return;
     setSaving(true);
-    const { transaction, error } = await saveSale({
-      customer: linkedBookingCustomer ?? 'Walk-in',
-      lines: cartEntries.map((e) => ({ itemId: e.item.id, itemName: e.item.name, quantity: e.qty, unitPrice: e.item.price })),
-      createdBy: profile?.id ?? null, bookingId: linkedBookingId,
-    });
-    setSaving(false);
-    if (error || !transaction) { Alert.alert('Error', error ?? 'Could not save sale.'); return; }
-    clearCart(); setConfirmModal(false);
-    setLastTxId(transaction.id); setShowUndo(true);
-    if (undoTimer) clearTimeout(undoTimer);
-    setUndoTimer(setTimeout(() => { setShowUndo(false); setLastTxId(null); }, 5000));
+    try {
+      const { transaction, error } = await saveSale({
+        customer: linkedBookingCustomer ?? 'Walk-in',
+        lines: cartEntries.map((e) => ({ itemId: e.item.id, itemName: e.item.name, quantity: e.qty, unitPrice: e.item.price })),
+        createdBy: profile?.id ?? null, bookingId: linkedBookingId,
+      });
+      if (error || !transaction) { Alert.alert('Error', error ?? 'Could not save sale.'); return; }
+      clearCart(); setConfirmModal(false);
+      setLastTxId(transaction.id); setShowUndo(true);
+      if (undoTimer) clearTimeout(undoTimer);
+      setUndoTimer(setTimeout(() => { setShowUndo(false); setLastTxId(null); }, 5000));
+    } catch (err) {
+      console.error('handleConfirmSale failed:', err);
+      Alert.alert('Error', 'Could not save sale. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleUndo = async () => {

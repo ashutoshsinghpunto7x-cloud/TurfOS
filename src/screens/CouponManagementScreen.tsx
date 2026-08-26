@@ -28,9 +28,14 @@ export default function CouponManagementScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { coupons: fetched } = await fetchCoupons();
-    setCoupons(fetched);
-    setLoading(false);
+    try {
+      const { coupons: fetched } = await fetchCoupons();
+      setCoupons(fetched);
+    } catch (err) {
+      console.error('CouponManagementScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -47,22 +52,28 @@ export default function CouponManagementScreen() {
     if (discountType === 'percent' && val > 100) { Alert.alert('Invalid', 'Percent cannot exceed 100.'); return; }
 
     setSaving(true);
-    const { coupon, error } = await createCoupon({
-      code:             code.trim(),
-      discountType,
-      discountValue:    val,
-      minBookingAmount: parseFloat(minAmount) || 0,
-      maxUses:          maxUses ? parseInt(maxUses) : null,
-      validFrom:        new Date().toISOString().slice(0, 10),
-      validUntil:       validUntil.trim() || null,
-      createdBy:        profile?.id ?? null,
-    });
-    setSaving(false);
+    try {
+      const { coupon, error } = await createCoupon({
+        code:             code.trim(),
+        discountType,
+        discountValue:    val,
+        minBookingAmount: parseFloat(minAmount) || 0,
+        maxUses:          maxUses ? parseInt(maxUses) : null,
+        validFrom:        new Date().toISOString().slice(0, 10),
+        validUntil:       validUntil.trim() || null,
+        createdBy:        profile?.id ?? null,
+      });
 
-    if (error) { Alert.alert('Error', error); return; }
-    setCoupons((prev) => [coupon!, ...prev]);
-    setAddModal(false);
-    resetForm();
+      if (error) { Alert.alert('Error', error); return; }
+      setCoupons((prev) => [coupon!, ...prev]);
+      setAddModal(false);
+      resetForm();
+    } catch (err) {
+      console.error('handleCreate (coupon) failed:', err);
+      Alert.alert('Error', 'Could not create coupon. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleToggle = async (coupon: Coupon) => {

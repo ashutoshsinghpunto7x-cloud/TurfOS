@@ -123,17 +123,22 @@ export default function CreditScreen() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [entriesRes, summariesRes, namesRes, itemsRes] = await Promise.all([
-      fetchCreditEntries(),
-      fetchCustomerCreditSummaries(),
-      fetchCreditCustomerNames(),
-      fetchSelectableItems(),
-    ]);
-    setEntries(entriesRes.entries);
-    setSummaries(summariesRes.summaries);
-    setCustomerNames(namesRes.names);
-    setSelectableItems(itemsRes.items);
-    setLoading(false);
+    try {
+      const [entriesRes, summariesRes, namesRes, itemsRes] = await Promise.all([
+        fetchCreditEntries(),
+        fetchCustomerCreditSummaries(),
+        fetchCreditCustomerNames(),
+        fetchSelectableItems(),
+      ]);
+      setEntries(entriesRes.entries);
+      setSummaries(summariesRes.summaries);
+      setCustomerNames(namesRes.names);
+      setSelectableItems(itemsRes.items);
+    } catch (err) {
+      console.error('CreditScreen loadAll failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
@@ -164,15 +169,21 @@ export default function CreditScreen() {
     let n = payNote.trim();
     if (!n) n = payType === 'paid_full' ? 'Full payment received' : payType === 'paid_partial' ? 'Partial payment received' : 'Additional credit added';
     setPayingSave(true);
-    const { entry, error } = await addCreditEntry({
-      customer: payCustomer.customer, itemId: '',
-      itemName: payType === 'more_credit' ? 'Credit adjustment' : 'Payment received',
-      quantity: 1, unitPrice: amt, entryType: et, note: n, createdBy: profile?.id ?? null,
-    });
-    setPayingSave(false);
-    if (error || !entry) { Alert.alert('Error', error ?? 'Could not save.'); return; }
-    setPaySheet(false); setPayCustomer(null);
-    await loadAll();
+    try {
+      const { entry, error } = await addCreditEntry({
+        customer: payCustomer.customer, itemId: '',
+        itemName: payType === 'more_credit' ? 'Credit adjustment' : 'Payment received',
+        quantity: 1, unitPrice: amt, entryType: et, note: n, createdBy: profile?.id ?? null,
+      });
+      if (error || !entry) { Alert.alert('Error', error ?? 'Could not save.'); return; }
+      setPaySheet(false); setPayCustomer(null);
+      await loadAll();
+    } catch (err) {
+      console.error('handleSavePayment failed:', err);
+      Alert.alert('Error', 'Could not save payment. Please try again.');
+    } finally {
+      setPayingSave(false);
+    }
   };
 
   const handleSave = async () => {
@@ -182,15 +193,21 @@ export default function CreditScreen() {
     if (!qty || qty <= 0) { Alert.alert('Invalid Quantity', 'Enter a valid quantity.'); return; }
     if (!price || price <= 0) { Alert.alert('Invalid Price', 'Enter a valid unit price.'); return; }
     setSaving(true);
-    const { entry, error } = await addCreditEntry({
-      customer: selCustomer.trim(), itemId: selItem.id, itemName: selItem.name,
-      quantity: qty, unitPrice: price, entryType, note: note.trim(), createdBy: profile?.id ?? null,
-    });
-    setSaving(false);
-    if (error || !entry) { Alert.alert('Error', error ?? 'Could not save entry.'); return; }
-    setEntries((prev) => [entry, ...prev]);
-    setAddModal(false);
-    fetchCustomerCreditSummaries().then((r) => { if (!r.error) setSummaries(r.summaries); });
+    try {
+      const { entry, error } = await addCreditEntry({
+        customer: selCustomer.trim(), itemId: selItem.id, itemName: selItem.name,
+        quantity: qty, unitPrice: price, entryType, note: note.trim(), createdBy: profile?.id ?? null,
+      });
+      if (error || !entry) { Alert.alert('Error', error ?? 'Could not save entry.'); return; }
+      setEntries((prev) => [entry, ...prev]);
+      setAddModal(false);
+      fetchCustomerCreditSummaries().then((r) => { if (!r.error) setSummaries(r.summaries); });
+    } catch (err) {
+      console.error('handleSave (credit entry) failed:', err);
+      Alert.alert('Error', 'Could not save entry. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const computedTotal = parseFloat(quantity || '0') * parseFloat(unitPrice || '0');

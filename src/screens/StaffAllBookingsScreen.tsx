@@ -96,9 +96,14 @@ export default function StaffAllBookingsScreen() {
 
   const load = useCallback(async (p: BookingPeriod) => {
     setLoading(true);
-    const { bookings: data } = await fetchBookingsByPeriod(p);
-    setBookings(data);
-    setLoading(false);
+    try {
+      const { bookings: data } = await fetchBookingsByPeriod(p);
+      setBookings(data);
+    } catch (err) {
+      console.error('StaffAllBookingsScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(period); }, [load, period]));

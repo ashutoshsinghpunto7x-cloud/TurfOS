@@ -237,28 +237,32 @@ export default function CustomerLiveScoringScreen() {
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else if (!tournaments.length) setLoading(true);
 
-    const { tournaments: t } = await fetchCustomerVisibleTournaments();
-    setTournaments(t);
+    try {
+      const { tournaments: t } = await fetchCustomerVisibleTournaments();
+      setTournaments(t);
 
-    const liveMap: Record<string, LiveMatchSummary[]> = {};
-    await Promise.all(t.map(async (tourney) => {
-      const { matches } = await fetchLiveMatches(tourney.id);
-      // Store all matches in state; filtering happens inside TourneySection
-      liveMap[tourney.id] = matches;
-    }));
-    setLiveData(liveMap);
+      const liveMap: Record<string, LiveMatchSummary[]> = {};
+      await Promise.all(t.map(async (tourney) => {
+        const { matches } = await fetchLiveMatches(tourney.id);
+        // Store all matches in state; filtering happens inside TourneySection
+        liveMap[tourney.id] = matches;
+      }));
+      setLiveData(liveMap);
 
-    // Auto-expand first tournament that has a live match
-    const liveTourney = t.find((tourney) =>
-      (liveMap[tourney.id] ?? []).some((m) => m.status === 'live'),
-    );
-    if (liveTourney) {
-      setExpandedTournament(liveTourney.id);
-    } else if (t.length > 0) {
-      setExpandedTournament((prev) => prev ?? t[0].id);
+      // Auto-expand first tournament that has a live match
+      const liveTourney = t.find((tourney) =>
+        (liveMap[tourney.id] ?? []).some((m) => m.status === 'live'),
+      );
+      if (liveTourney) {
+        setExpandedTournament(liveTourney.id);
+      } else if (t.length > 0) {
+        setExpandedTournament((prev) => prev ?? t[0].id);
+      }
+    } catch (err) {
+      console.error('CustomerLiveScoringScreen load failed:', err);
+    } finally {
+      if (isRefresh) setRefreshing(false); else setLoading(false);
     }
-
-    if (isRefresh) setRefreshing(false); else setLoading(false);
   }, [tournaments.length]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

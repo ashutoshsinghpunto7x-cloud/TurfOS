@@ -66,15 +66,20 @@ export default function TournamentDetailScreen() {
   const load = useCallback(async () => {
     if (!profile?.id) return;
     setLoading(true);
-    const [{ tournaments }, { teams: t }, { fixtures: f }, { standings: st }] = await Promise.all([
-      fetchTournaments(profile.id),
-      fetchTeams(tournamentId),
-      fetchFixtures(tournamentId),
-      fetchStandings(tournamentId),
-    ]);
-    setTournament(tournaments.find((x) => x.id === tournamentId) ?? null);
-    setTeams(t); setFixtures(f); setStandings(st);
-    setLoading(false);
+    try {
+      const [{ tournaments }, { teams: t }, { fixtures: f }, { standings: st }] = await Promise.all([
+        fetchTournaments(profile.id),
+        fetchTeams(tournamentId),
+        fetchFixtures(tournamentId),
+        fetchStandings(tournamentId),
+      ]);
+      setTournament(tournaments.find((x) => x.id === tournamentId) ?? null);
+      setTeams(t); setFixtures(f); setStandings(st);
+    } catch (err) {
+      console.error('TournamentDetailScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [tournamentId, profile?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -89,15 +94,21 @@ export default function TournamentDetailScreen() {
       Alert.alert('Full', `Maximum ${tournament.num_teams} teams allowed.`); return;
     }
     setSavingTeam(true);
-    const { error } = await registerTeam({
-      tournamentId, teamName: teamName.trim(), captainName: captainName.trim(),
-      captainPhone: captainPhone.trim(), vcName: vcName.trim() || null, vcPhone: vcPhone.trim() || null,
-    });
-    setSavingTeam(false);
-    if (error) { Alert.alert('Error', error); return; }
-    setTeamModal(false);
-    setTeamName(''); setCaptainName(''); setCaptainPhone(''); setVcName(''); setVcPhone('');
-    load();
+    try {
+      const { error } = await registerTeam({
+        tournamentId, teamName: teamName.trim(), captainName: captainName.trim(),
+        captainPhone: captainPhone.trim(), vcName: vcName.trim() || null, vcPhone: vcPhone.trim() || null,
+      });
+      if (error) { Alert.alert('Error', error); return; }
+      setTeamModal(false);
+      setTeamName(''); setCaptainName(''); setCaptainPhone(''); setVcName(''); setVcPhone('');
+      load();
+    } catch (err) {
+      console.error('handleRegisterTeam failed:', err);
+      Alert.alert('Error', 'Could not register team. Please try again.');
+    } finally {
+      setSavingTeam(false);
+    }
   };
 
   // ── Auto fixture generation ───────────────────────────────────────────────
@@ -163,31 +174,37 @@ export default function TournamentDetailScreen() {
 
   const doCreateManual = async (t1: TournamentTeam, t2: TournamentTeam) => {
     setSavingManual(true);
-    const matchNum = await getNextMatchNumber(tournamentId);
-    const { error } = await createManualFixture({
-      tournamentId,
-      round:       parseInt(manualRound, 10) || 1,
-      roundLabel:  manualRoundLabel.trim() || 'Match',
-      matchNumber: matchNum,
-      team1Id:     t1.id,
-      team2Id:     t2.id,
-      team1Name:   t1.team_name,
-      team2Name:   t2.team_name,
-      matchDate:   manualDate.trim() || null,
-      matchTime:   manualTime.trim() || null,
-      venue:       null,
-    });
-    setSavingManual(false);
-    if (error) { Alert.alert('Error', error); return; }
-    setManualModal(false);
-    setManualTeam1Id(''); setManualTeam2Id('');
-    setManualRound('1'); setManualRoundLabel('Match');
-    setManualDate(''); setManualTime('');
-    if (tournament?.status === 'draft' || tournament?.status === 'registration') {
-      await updateTournament(tournamentId, { status: 'ongoing' });
+    try {
+      const matchNum = await getNextMatchNumber(tournamentId);
+      const { error } = await createManualFixture({
+        tournamentId,
+        round:       parseInt(manualRound, 10) || 1,
+        roundLabel:  manualRoundLabel.trim() || 'Match',
+        matchNumber: matchNum,
+        team1Id:     t1.id,
+        team2Id:     t2.id,
+        team1Name:   t1.team_name,
+        team2Name:   t2.team_name,
+        matchDate:   manualDate.trim() || null,
+        matchTime:   manualTime.trim() || null,
+        venue:       null,
+      });
+      if (error) { Alert.alert('Error', error); return; }
+      setManualModal(false);
+      setManualTeam1Id(''); setManualTeam2Id('');
+      setManualRound('1'); setManualRoundLabel('Match');
+      setManualDate(''); setManualTime('');
+      if (tournament?.status === 'draft' || tournament?.status === 'registration') {
+        await updateTournament(tournamentId, { status: 'ongoing' });
+      }
+      load();
+      Alert.alert('✓ Fixture Created', `Match ${matchNum}: ${t1.team_name} vs ${t2.team_name}`);
+    } catch (err) {
+      console.error('doCreateManual failed:', err);
+      Alert.alert('Error', 'Could not create fixture. Please try again.');
+    } finally {
+      setSavingManual(false);
     }
-    load();
-    Alert.alert('✓ Fixture Created', `Match ${matchNum}: ${t1.team_name} vs ${t2.team_name}`);
   };
 
   // ── Status advance ────────────────────────────────────────────────────────

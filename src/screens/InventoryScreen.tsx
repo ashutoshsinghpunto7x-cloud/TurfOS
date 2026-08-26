@@ -69,10 +69,15 @@ export default function InventoryScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { items: fetched, error } = await fetchInventoryItems();
-    if (error) Alert.alert('Load Error', error);
-    else setItems(fetched);
-    setLoading(false);
+    try {
+      const { items: fetched, error } = await fetchInventoryItems();
+      if (error) Alert.alert('Load Error', error);
+      else setItems(fetched);
+    } catch (err) {
+      console.error('InventoryScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -102,9 +107,14 @@ export default function InventoryScreen() {
     setAdjustMode('add');
     setRestockModal(true);
     setLoadingHistory(true);
-    const { records } = await fetchRestockHistory(item.id);
-    setRestockHistory(records);
-    setLoadingHistory(false);
+    try {
+      const { records } = await fetchRestockHistory(item.id);
+      setRestockHistory(records);
+    } catch (err) {
+      console.error('openRestock failed:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
 
   const handleAdjust = async () => {
@@ -117,13 +127,19 @@ export default function InventoryScreen() {
       return;
     }
     setSavingRestock(true);
-    const { updatedItem, error } = await adjustStock({
-      item: selectedItem, delta, note: adjustNote, createdBy: profile?.id ?? null,
-    });
-    setSavingRestock(false);
-    if (error || !updatedItem) { Alert.alert('Error', error ?? 'Could not update stock.'); return; }
-    setItems((prev) => prev.map((i) => i.id === updatedItem.id ? updatedItem : i));
-    setRestockModal(false);
+    try {
+      const { updatedItem, error } = await adjustStock({
+        item: selectedItem, delta, note: adjustNote, createdBy: profile?.id ?? null,
+      });
+      if (error || !updatedItem) { Alert.alert('Error', error ?? 'Could not update stock.'); return; }
+      setItems((prev) => prev.map((i) => i.id === updatedItem.id ? updatedItem : i));
+      setRestockModal(false);
+    } catch (err) {
+      console.error('handleAdjust failed:', err);
+      Alert.alert('Error', 'Could not update stock. Please try again.');
+    } finally {
+      setSavingRestock(false);
+    }
   };
 
   const openAddModal = () => { setEditingItem(null); setForm(blankForm); setItemModal(true); };
@@ -146,32 +162,36 @@ export default function InventoryScreen() {
     const minStock = parseFloat(form.minStock) || 0;
     const maxStock = parseFloat(form.maxStock) || 100;
     setSavingItem(true);
-
-    if (editingItem) {
-      const { item, error } = await editInventoryItem({
-        id: editingItem.id, name: form.name, emoji: form.emoji,
-        price, costPrice: parseFloat(form.costPrice) || 0,
-        category: form.category, unit: form.unit,
-        stock: editingItem.stock, minStock, maxStock, isSellable: form.isSellable,
-      });
+    try {
+      if (editingItem) {
+        const { item, error } = await editInventoryItem({
+          id: editingItem.id, name: form.name, emoji: form.emoji,
+          price, costPrice: parseFloat(form.costPrice) || 0,
+          category: form.category, unit: form.unit,
+          stock: editingItem.stock, minStock, maxStock, isSellable: form.isSellable,
+        });
+        if (error || !item) { Alert.alert('Error', error ?? 'Could not update item.'); return; }
+        setItems((prev) => prev.map((i) => i.id === item.id ? item : i));
+      } else {
+        const { item, error } = await addInventoryItem({
+          name: form.name, emoji: form.emoji, price,
+          costPrice: parseFloat(form.costPrice) || 0,
+          category: form.category, unit: form.unit,
+          stock: parseFloat(form.stock) || 0, minStock, maxStock,
+          isSellable: form.isSellable,
+        });
+        if (error || !item) { Alert.alert('Error', error ?? 'Could not add item.'); return; }
+        setItems((prev) => [...prev, item].sort((a, b) =>
+          a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
+        ));
+      }
+      setItemModal(false);
+    } catch (err) {
+      console.error('handleSaveItem failed:', err);
+      Alert.alert('Error', 'Could not save item. Please try again.');
+    } finally {
       setSavingItem(false);
-      if (error || !item) { Alert.alert('Error', error ?? 'Could not update item.'); return; }
-      setItems((prev) => prev.map((i) => i.id === item.id ? item : i));
-    } else {
-      const { item, error } = await addInventoryItem({
-        name: form.name, emoji: form.emoji, price,
-        costPrice: parseFloat(form.costPrice) || 0,
-        category: form.category, unit: form.unit,
-        stock: parseFloat(form.stock) || 0, minStock, maxStock,
-        isSellable: form.isSellable,
-      });
-      setSavingItem(false);
-      if (error || !item) { Alert.alert('Error', error ?? 'Could not add item.'); return; }
-      setItems((prev) => [...prev, item].sort((a, b) =>
-        a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
-      ));
     }
-    setItemModal(false);
   };
 
   const handleDelete = (item: DBInventoryItem) => {

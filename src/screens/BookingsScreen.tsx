@@ -31,9 +31,14 @@ export default function BookingsScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { bookings: fetched, error } = await fetchBookingsByPeriod(period);
-    if (!error) setBookings(fetched);
-    setLoading(false);
+    try {
+      const { bookings: fetched, error } = await fetchBookingsByPeriod(period);
+      if (!error) setBookings(fetched);
+    } catch (err) {
+      console.error('BookingsScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [period]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

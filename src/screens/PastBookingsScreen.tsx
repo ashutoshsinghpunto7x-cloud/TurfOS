@@ -150,12 +150,17 @@ export default function PastBookingsScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { bookings: data } = await fetchPastBookingsFiltered({
-      date:   dateFilter || undefined,
-      status: statusFilter === 'All' ? '' : statusFilter,
-    });
-    setBookings(data);
-    setLoading(false);
+    try {
+      const { bookings: data } = await fetchPastBookingsFiltered({
+        date:   dateFilter || undefined,
+        status: statusFilter === 'All' ? '' : statusFilter,
+      });
+      setBookings(data);
+    } catch (err) {
+      console.error('PastBookingsScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [dateFilter, statusFilter]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

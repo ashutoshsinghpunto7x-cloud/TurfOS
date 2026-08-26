@@ -68,13 +68,18 @@ export default function FindPlayersScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ posts: p }, mine] = await Promise.all([
-      fetchOpenPosts(),
-      profile?.id ? fetchMyPosts(profile.id) : Promise.resolve({ posts: [] as FindPlayersPost[] }),
-    ]);
-    setPosts(p);
-    setMyPosts(mine.posts);
-    setLoading(false);
+    try {
+      const [{ posts: p }, mine] = await Promise.all([
+        fetchOpenPosts(),
+        profile?.id ? fetchMyPosts(profile.id) : Promise.resolve({ posts: [] as FindPlayersPost[] }),
+      ]);
+      setPosts(p);
+      setMyPosts(mine.posts);
+    } catch (err) {
+      console.error('FindPlayersScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [profile?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -84,9 +89,14 @@ export default function FindPlayersScreen() {
   const openManage = async (post: FindPlayersPost) => {
     setManageOpen(post);
     setLoadingInterests(true);
-    const { interests: i } = await fetchInterests(post.id);
-    setInterests(i);
-    setLoadingInterests(false);
+    try {
+      const { interests: i } = await fetchInterests(post.id);
+      setInterests(i);
+    } catch (err) {
+      console.error('openManage failed:', err);
+    } finally {
+      setLoadingInterests(false);
+    }
   };
 
   const handleClose = async (post: FindPlayersPost) => {

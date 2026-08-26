@@ -131,43 +131,47 @@ export default function MatchScoringScreen({ readOnly: readOnlyProp }: Props) {
   // ── Load ───────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
-    const [{ fixtures }, { teams: t }, { innings: inn }, { tournament: tourney }] = await Promise.all([
-      fetchFixtures(tournamentId),
-      fetchTeams(tournamentId),
-      fetchInnings(fixtureId),
-      fetchTournamentById(tournamentId),
-    ]);
-
-    const fix = fixtures.find((f) => f.id === fixtureId) ?? null;
-    setFixture(fix);
-    setTournament(tourney);
-    setTeams(t);
-    setInnings(inn);
-
-    const activeInn = inn[activeInnings - 1];
-    if (activeInn) {
-      const [{ scores: bat }, { scores: bowl }, { deliveries: dels }] = await Promise.all([
-        fetchBattingScores(activeInn.id),
-        fetchBowlingScores(activeInn.id),
-        fetchDeliveries(activeInn.id),
+    try {
+      const [{ fixtures }, { teams: t }, { innings: inn }, { tournament: tourney }] = await Promise.all([
+        fetchFixtures(tournamentId),
+        fetchTeams(tournamentId),
+        fetchInnings(fixtureId),
+        fetchTournamentById(tournamentId),
       ]);
-      setBatting(bat); setBowling(bowl); setDeliveries(dels);
 
-      const fairCount = dels.filter((d) => d.is_fair_ball).length;
-      setCurrentOver(Math.floor(fairCount / 6) + 1);
-      setCurrentBall((fairCount % 6) + 1);
+      const fix = fixtures.find((f) => f.id === fixtureId) ?? null;
+      setFixture(fix);
+      setTournament(tourney);
+      setTeams(t);
+      setInnings(inn);
 
-      if (!readOnly && dels.length > 0) {
-        const last = dels[dels.length - 1];
-        if (!strikerRef.current) setStriker(last.batsman_name ?? '');
-        if (!bowlerName) setBowlerName(last.bowler_name ?? '');
+      const activeInn = inn[activeInnings - 1];
+      if (activeInn) {
+        const [{ scores: bat }, { scores: bowl }, { deliveries: dels }] = await Promise.all([
+          fetchBattingScores(activeInn.id),
+          fetchBowlingScores(activeInn.id),
+          fetchDeliveries(activeInn.id),
+        ]);
+        setBatting(bat); setBowling(bowl); setDeliveries(dels);
+
+        const fairCount = dels.filter((d) => d.is_fair_ball).length;
+        setCurrentOver(Math.floor(fairCount / 6) + 1);
+        setCurrentBall((fairCount % 6) + 1);
+
+        if (!readOnly && dels.length > 0) {
+          const last = dels[dels.length - 1];
+          if (!strikerRef.current) setStriker(last.batsman_name ?? '');
+          if (!bowlerName) setBowlerName(last.bowler_name ?? '');
+        }
+      } else {
+        setBatting([]); setBowling([]); setDeliveries([]);
+        setCurrentOver(1); setCurrentBall(1);
       }
-    } else {
-      setBatting([]); setBowling([]); setDeliveries([]);
-      setCurrentOver(1); setCurrentBall(1);
+    } catch (err) {
+      console.error('MatchScoringScreen load failed:', err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, [fixtureId, tournamentId, activeInnings]);
 
   useFocusEffect(useCallback(() => {
@@ -370,27 +374,33 @@ export default function MatchScoringScreen({ readOnly: readOnlyProp }: Props) {
   const handleSaveResult = async () => {
     if (!fixture) return;
     setSavingResult(true);
-    const winnerId = matchResult === 'tie' ? null
-      : matchResult === 'team1_win' ? fixture.team1_id : fixture.team2_id;
-    await updateFixture(fixtureId, { status: 'completed', winner_id: winnerId, player_of_match: pomName.trim() || null });
-    for (const inn of innings) await updateInnings(inn.id, { is_completed: true });
-    const inn1 = innings[0]; const inn2 = innings[1];
-    if (inn1 && inn2 && fixture.team1_id && fixture.team2_id) {
-      await updateStandingsAfterMatch({
-        tournamentId,
-        winnerId,
-        loserId: winnerId === fixture.team1_id ? fixture.team2_id : fixture.team1_id,
-        team1Id: fixture.team1_id, team2Id: fixture.team2_id,
-        team1RunsScored: inn1.batting_team_id === fixture.team1_id ? inn1.total_runs : inn2.total_runs,
-        team1BallsFaced: inn1.batting_team_id === fixture.team1_id ? inn1.total_balls : inn2.total_balls,
-        team2RunsScored: inn1.batting_team_id === fixture.team2_id ? inn1.total_runs : inn2.total_runs,
-        team2BallsFaced: inn1.batting_team_id === fixture.team2_id ? inn1.total_balls : inn2.total_balls,
-        isTie: matchResult === 'tie',
-      });
+    try {
+      const winnerId = matchResult === 'tie' ? null
+        : matchResult === 'team1_win' ? fixture.team1_id : fixture.team2_id;
+      await updateFixture(fixtureId, { status: 'completed', winner_id: winnerId, player_of_match: pomName.trim() || null });
+      for (const inn of innings) await updateInnings(inn.id, { is_completed: true });
+      const inn1 = innings[0]; const inn2 = innings[1];
+      if (inn1 && inn2 && fixture.team1_id && fixture.team2_id) {
+        await updateStandingsAfterMatch({
+          tournamentId,
+          winnerId,
+          loserId: winnerId === fixture.team1_id ? fixture.team2_id : fixture.team1_id,
+          team1Id: fixture.team1_id, team2Id: fixture.team2_id,
+          team1RunsScored: inn1.batting_team_id === fixture.team1_id ? inn1.total_runs : inn2.total_runs,
+          team1BallsFaced: inn1.batting_team_id === fixture.team1_id ? inn1.total_balls : inn2.total_balls,
+          team2RunsScored: inn1.batting_team_id === fixture.team2_id ? inn1.total_runs : inn2.total_runs,
+          team2BallsFaced: inn1.batting_team_id === fixture.team2_id ? inn1.total_balls : inn2.total_balls,
+          isTie: matchResult === 'tie',
+        });
+      }
+      setResultModal(false);
+      load();
+    } catch (err) {
+      console.error('handleSaveResult failed:', err);
+      Alert.alert('Error', 'Could not save the match result. Please try again — check the fixture status before retrying.');
+    } finally {
+      setSavingResult(false);
     }
-    setSavingResult(false);
-    setResultModal(false);
-    load();
   };
 
   // ── Computed values ────────────────────────────────────────────────────────

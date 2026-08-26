@@ -52,17 +52,23 @@ export default function DayBookingsScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      supabase
-        .from('bookings')
-        .select('id, customer, phone, slot, sport, status, amount, advance_amount, paid')
-        .eq('booking_date', isoDate)
-        .neq('status', 'Cancelled')
-        .order('slot')
-        .then(({ data, error: e }) => {
+      (async () => {
+        try {
+          const { data, error: e } = await supabase
+            .from('bookings')
+            .select('id, customer, phone, slot, sport, status, amount, advance_amount, paid')
+            .eq('booking_date', isoDate)
+            .neq('status', 'Cancelled')
+            .order('slot');
           if (e) setError(e.message);
           else setBookings((data ?? []).map(toAppBooking));
+        } catch (err) {
+          console.error('DayBookingsScreen load failed:', err);
+          setError('Could not load bookings.');
+        } finally {
           setLoading(false);
-        });
+        }
+      })();
     }, [isoDate]),
   );
 

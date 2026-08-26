@@ -64,9 +64,14 @@ export default function TournamentsScreen() {
   const load = useCallback(async () => {
     if (!profile?.id) return;
     setLoading(true);
-    const { tournaments: t } = await fetchTournaments(profile.id);
-    setTournaments(t);
-    setLoading(false);
+    try {
+      const { tournaments: t } = await fetchTournaments(profile.id);
+      setTournaments(t);
+    } catch (err) {
+      console.error('TournamentsScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [profile?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -78,34 +83,40 @@ export default function TournamentsScreen() {
     if (nt > 64)              { Alert.alert('Invalid', 'Maximum 64 teams allowed.'); return; }
 
     setSaving(true);
-    const { tournament, error } = await createTournament({
-      ownerId:         profile!.id,
-      name:            name.trim(),
-      sport,
-      format,
-      numTeams:        nt,
-      oversPerMatch:   parseInt(oversPerMatch, 10) || 10,
-      entryFee:        parseFloat(entryFee) || 0,
-      prizePool:       parseFloat(prizePool) || 0,
-      winnerPrize:     parseFloat(winnerPrize) || 0,
-      runnerUpPrize:   parseFloat(runnerPrize) || 0,
-      bestPlayerPrize: parseFloat(bestPrize) || 0,
-      customPrizes:    [],
-      startDate:       startDate.trim() || null,
-      endDate:         null,
-      venue:           venue.trim() || null,
-      description:     description.trim() || null,
-      rules:           rules.trim() || null,
-    });
-    setSaving(false);
+    try {
+      const { tournament, error } = await createTournament({
+        ownerId:         profile!.id,
+        name:            name.trim(),
+        sport,
+        format,
+        numTeams:        nt,
+        oversPerMatch:   parseInt(oversPerMatch, 10) || 10,
+        entryFee:        parseFloat(entryFee) || 0,
+        prizePool:       parseFloat(prizePool) || 0,
+        winnerPrize:     parseFloat(winnerPrize) || 0,
+        runnerUpPrize:   parseFloat(runnerPrize) || 0,
+        bestPlayerPrize: parseFloat(bestPrize) || 0,
+        customPrizes:    [],
+        startDate:       startDate.trim() || null,
+        endDate:         null,
+        venue:           venue.trim() || null,
+        description:     description.trim() || null,
+        rules:           rules.trim() || null,
+      });
 
-    if (error || !tournament) { Alert.alert('Error', error ?? 'Could not create tournament.'); return; }
+      if (error || !tournament) { Alert.alert('Error', error ?? 'Could not create tournament.'); return; }
 
-    setCreateModal(false);
-    resetForm();
-    load();
-    // Navigate into the new tournament
-    navigation.navigate('TournamentDetail', { tournamentId: tournament.id });
+      setCreateModal(false);
+      resetForm();
+      load();
+      // Navigate into the new tournament
+      navigation.navigate('TournamentDetail', { tournamentId: tournament.id });
+    } catch (err) {
+      console.error('handleCreate failed:', err);
+      Alert.alert('Error', 'Could not create tournament. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = (t: Tournament) => {

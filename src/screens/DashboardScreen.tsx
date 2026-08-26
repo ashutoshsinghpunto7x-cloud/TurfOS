@@ -408,12 +408,18 @@ export default function DashboardScreen() {
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
-    const [{ metrics: m, error: e }, count] = await Promise.all([
-      fetchDashboardMetrics(),
-      fetchPendingCount(),
-    ]);
-    setMetrics(m); setError(e); setPendingCount(count);
-    if (isRefresh) setRefreshing(false); else setLoading(false);
+    try {
+      const [{ metrics: m, error: e }, count] = await Promise.all([
+        fetchDashboardMetrics(),
+        fetchPendingCount(),
+      ]);
+      setMetrics(m); setError(e); setPendingCount(count);
+    } catch (err) {
+      console.error('DashboardScreen load failed:', err);
+      setError('Could not load dashboard. Pull to refresh to try again.');
+    } finally {
+      if (isRefresh) setRefreshing(false); else setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

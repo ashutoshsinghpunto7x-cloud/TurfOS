@@ -134,30 +134,35 @@ export default function CustomerDashboardScreen() {
   const load = useCallback(async () => {
     if (!profile?.id) return;
     setLoading(true);
-    const [myRes, couponRes] = await Promise.all([
-      supabase
-        .from('bookings')
-        .select('id,slot,turf,booking_date,status,sport,amount,advance_amount,paid')
-        .eq('customer_id', profile.id)
-        .neq('status', 'Cancelled')
-        .order('booking_date', { ascending: false })
-        .limit(20),
-      fetchCustomerSentCoupons(profile.id),
-    ]);
-    setMyBookings(
-      (myRes.data ?? []).map((b: any) => ({
-        id: b.id, slot: b.slot, turf: b.turf ?? 'Turf A',
-        booking_date: b.booking_date, status: b.status,
-        sport: b.sport ?? null, amount: Number(b.amount ?? 0),
-        advance_amount: Number(b.advance_amount ?? 0), paid: Boolean(b.paid),
-      })),
-    );
-    setSentCoupons(couponRes.sentCoupons);
-    setUnreadCount(couponRes.unreadCount);
-    setLoading(false);
-    Animated.timing(fadeAnim, {
-      toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-    }).start();
+    try {
+      const [myRes, couponRes] = await Promise.all([
+        supabase
+          .from('bookings')
+          .select('id,slot,turf,booking_date,status,sport,amount,advance_amount,paid')
+          .eq('customer_id', profile.id)
+          .neq('status', 'Cancelled')
+          .order('booking_date', { ascending: false })
+          .limit(20),
+        fetchCustomerSentCoupons(profile.id),
+      ]);
+      setMyBookings(
+        (myRes.data ?? []).map((b: any) => ({
+          id: b.id, slot: b.slot, turf: b.turf ?? 'Turf A',
+          booking_date: b.booking_date, status: b.status,
+          sport: b.sport ?? null, amount: Number(b.amount ?? 0),
+          advance_amount: Number(b.advance_amount ?? 0), paid: Boolean(b.paid),
+        })),
+      );
+      setSentCoupons(couponRes.sentCoupons);
+      setUnreadCount(couponRes.unreadCount);
+    } catch (err) {
+      console.error('CustomerDashboardScreen load failed:', err);
+    } finally {
+      setLoading(false);
+      Animated.timing(fadeAnim, {
+        toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }).start();
+    }
   }, [profile?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

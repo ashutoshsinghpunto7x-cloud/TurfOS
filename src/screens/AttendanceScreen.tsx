@@ -44,9 +44,14 @@ export default function AttendanceScreen() {
 
   const load = useCallback(async (d: string) => {
     setLoading(true);
-    const { records: r } = await fetchAttendanceForDate(d);
-    setRecords(r);
-    setLoading(false);
+    try {
+      const { records: r } = await fetchAttendanceForDate(d);
+      setRecords(r);
+    } catch (err) {
+      console.error('AttendanceScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(date); }, [load, date]));

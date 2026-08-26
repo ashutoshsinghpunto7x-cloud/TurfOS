@@ -61,11 +61,16 @@ export default function BillScreen() {
 
   const loadBill = useCallback(async () => {
     if (!bookingId) { setError('No booking ID.'); setLoading(false); return; }
-    const { bill: b, error: e } = await fetchBillData(bookingId);
-    setBill(b); setError(e);
-    if (b) {
-      setCashInput(b.cashAmount ? String(b.cashAmount) : '');
-      setOnlineInput(b.onlineAmount ? String(b.onlineAmount) : '');
+    try {
+      const { bill: b, error: e } = await fetchBillData(bookingId);
+      setBill(b); setError(e);
+      if (b) {
+        setCashInput(b.cashAmount ? String(b.cashAmount) : '');
+        setOnlineInput(b.onlineAmount ? String(b.onlineAmount) : '');
+      }
+    } catch (err) {
+      console.error('BillScreen loadBill failed:', err);
+      setError('Could not load bill. Please try again.');
     }
   }, [bookingId]);
 
@@ -90,11 +95,17 @@ export default function BillScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Confirm', onPress: async () => {
         setFinalizing(true);
-        const { error: e } = await finalizeBill({ bookingId, cashAmount: cash, onlineAmount: online });
-        setFinalizing(false);
-        if (e) { Alert.alert('Error', e); return; }
-        await loadBill();
-        Alert.alert('Bill Finalized', 'Bill saved and marked paid.');
+        try {
+          const { error: e } = await finalizeBill({ bookingId, cashAmount: cash, onlineAmount: online });
+          if (e) { Alert.alert('Error', e); return; }
+          await loadBill();
+          Alert.alert('Bill Finalized', 'Bill saved and marked paid.');
+        } catch (err) {
+          console.error('handleFinalize failed:', err);
+          Alert.alert('Error', 'Could not finalize the bill. Please try again.');
+        } finally {
+          setFinalizing(false);
+        }
       }},
     ]);
   };
@@ -115,54 +126,60 @@ export default function BillScreen() {
     // Snapshot for revert on error
     const snapshot = { ...bill, posItems: bill.posItems.map(i => ({ ...i })) };
 
-    if (qty === 0) {
-      // ── Remove item ──────────────────────────────────────────────────────
-      const optimistic = recalcBill(bill, bill.posItems.filter(i => i.transactionItemId !== editingItem.transactionItemId));
-      setBill(optimistic);           // apply immediately — grand total updates now
-      setEditModal(false);
-      setEditingItem(null);
+    try {
+      if (qty === 0) {
+        // ── Remove item ──────────────────────────────────────────────────────
+        const optimistic = recalcBill(bill, bill.posItems.filter(i => i.transactionItemId !== editingItem.transactionItemId));
+        setBill(optimistic);           // apply immediately — grand total updates now
+        setEditModal(false);
+        setEditingItem(null);
 
-      const { error: e } = await removePOSLineItem({
-        transactionItemId: editingItem.transactionItemId,
-        transactionId:     editingItem.transactionId,
-      });
-      if (e) {
-        setBill(snapshot);           // revert only on DB error
-        Alert.alert('Error', e);
+        const { error: e } = await removePOSLineItem({
+          transactionItemId: editingItem.transactionItemId,
+          transactionId:     editingItem.transactionId,
+        });
+        if (e) {
+          setBill(snapshot);           // revert only on DB error
+          Alert.alert('Error', e);
+        }
+        // success → keep the optimistic state; no re-fetch that could overwrite
+
+      } else {
+        // ── Edit quantity ────────────────────────────────────────────────────
+        const newLineTotal = qty * safeNum(editingItem.unitPrice);
+        const optimistic = recalcBill(
+          bill,
+          bill.posItems.map(i =>
+            i.transactionItemId === editingItem.transactionItemId
+              ? { ...i, quantity: qty, lineTotal: newLineTotal }
+              : i,
+          ),
+        );
+        setBill(optimistic);           // apply immediately — qty, line total, POS total, grand total all update now
+        setEditModal(false);
+        setEditingItem(null);
+
+        const { error: e } = await editPOSLineItem({
+          transactionItemId: editingItem.transactionItemId,
+          transactionId:     editingItem.transactionId,
+          inventoryItemId:   editingItem.inventoryItemId,
+          newQuantity:       qty,
+          unitPrice:         editingItem.unitPrice,
+          originalQuantity:  editingItem.quantity,
+        });
+        if (e) {
+          setBill(snapshot);           // revert only on DB error
+          Alert.alert('Error', e);
+        }
+        // success → keep the optimistic state; no re-fetch that could overwrite
       }
-      // success → keep the optimistic state; no re-fetch that could overwrite
-
-    } else {
-      // ── Edit quantity ────────────────────────────────────────────────────
-      const newLineTotal = qty * safeNum(editingItem.unitPrice);
-      const optimistic = recalcBill(
-        bill,
-        bill.posItems.map(i =>
-          i.transactionItemId === editingItem.transactionItemId
-            ? { ...i, quantity: qty, lineTotal: newLineTotal }
-            : i,
-        ),
-      );
-      setBill(optimistic);           // apply immediately — qty, line total, POS total, grand total all update now
-      setEditModal(false);
-      setEditingItem(null);
-
-      const { error: e } = await editPOSLineItem({
-        transactionItemId: editingItem.transactionItemId,
-        transactionId:     editingItem.transactionId,
-        inventoryItemId:   editingItem.inventoryItemId,
-        newQuantity:       qty,
-        unitPrice:         editingItem.unitPrice,
-        originalQuantity:  editingItem.quantity,
-      });
-      if (e) {
-        setBill(snapshot);           // revert only on DB error
-        Alert.alert('Error', e);
-      }
-      // success → keep the optimistic state; no re-fetch that could overwrite
+    } catch (err) {
+      console.error('handleSaveEdit failed:', err);
+      setBill(snapshot);
+      Alert.alert('Error', 'Could not save the change. Please try again.');
+    } finally {
+      setSavingEdit(false);
     }
-
-    setSavingEdit(false);
   };
 
   if (loading) return (

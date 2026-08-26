@@ -220,44 +220,47 @@ export default function BookingRequestModal({
       // Re-verify the slot is still free right before charging — the hold can have
       // expired, or another customer may have confirmed it while this form was open.
       setSubmitting(true);
-      const free = await isSlotStillFree(bookingDate, turf, slotLabel);
-      if (!free) {
+      try {
+        const free = await isSlotStillFree(bookingDate, turf, slotLabel);
+        if (!free) {
+          Alert.alert(
+            'Slot No Longer Available',
+            'This slot was just booked by someone else. Please go back and pick another time — you have not been charged.',
+          );
+          if (holdId) await releaseSlotHold(holdId);
+          onClose();
+          return;
+        }
+
+        if (!profile?.id) {
+          Alert.alert('Error', 'You must be signed in to book.');
+          return;
+        }
+
+        const { id, error: placeholderError } = await getOrCreatePendingPaymentRequest({
+          customerId:        profile.id,
+          customerName:      name.trim(),
+          phone:             phone.trim(),
+          bookingDate, turf, slotLabel,
+          sport:             selectedSport!.key,
+          advanceAmount:     advanceAmt,
+          finalAmount:       finalPrice,
+          bookingSourceRole,
+        });
+
+        if (placeholderError || !id) {
+          Alert.alert('Error', placeholderError ?? 'Could not start booking. Please try again.');
+          return;
+        }
+
+        setPendingRequestId(id);
+        setRazorpaySheetVisible(true);
+      } catch (err) {
+        console.error('handleSubmit (customer) failed:', err);
+        Alert.alert('Error', 'Something went wrong. Please try again — you have not been charged.');
+      } finally {
         setSubmitting(false);
-        Alert.alert(
-          'Slot No Longer Available',
-          'This slot was just booked by someone else. Please go back and pick another time — you have not been charged.',
-        );
-        if (holdId) await releaseSlotHold(holdId);
-        onClose();
-        return;
       }
-
-      if (!profile?.id) {
-        setSubmitting(false);
-        Alert.alert('Error', 'You must be signed in to book.');
-        return;
-      }
-
-      const { id, error: placeholderError } = await getOrCreatePendingPaymentRequest({
-        customerId:        profile.id,
-        customerName:      name.trim(),
-        phone:             phone.trim(),
-        bookingDate, turf, slotLabel,
-        sport:             selectedSport!.key,
-        advanceAmount:     advanceAmt,
-        finalAmount:       finalPrice,
-        bookingSourceRole,
-      });
-
-      setSubmitting(false);
-
-      if (placeholderError || !id) {
-        Alert.alert('Error', placeholderError ?? 'Could not start booking. Please try again.');
-        return;
-      }
-
-      setPendingRequestId(id);
-      setRazorpaySheetVisible(true);
       return;
     }
 
@@ -266,59 +269,65 @@ export default function BookingRequestModal({
     }
 
     setSubmitting(true);
-    let screenshotUrl: string | null = null;
+    try {
+      let screenshotUrl: string | null = null;
 
-    if (screenshotUri && payMethod === 'online') {
-      setUploading(true);
-      const mime = screenshotMime;
-      const ext  = mime.split('/')[1] ?? 'jpg';
-      const path = `${profile?.id ?? 'staff'}/${Date.now()}.${ext}`;
-      const { url, error: uploadError } = await uploadFileToSupabase({
-        fileUri: screenshotUri!, bucket: 'payment-screenshots',
-        path, mimeType: mime, upsert: false,
+      if (screenshotUri && payMethod === 'online') {
+        setUploading(true);
+        const mime = screenshotMime;
+        const ext  = mime.split('/')[1] ?? 'jpg';
+        const path = `${profile?.id ?? 'staff'}/${Date.now()}.${ext}`;
+        const { url, error: uploadError } = await uploadFileToSupabase({
+          fileUri: screenshotUri!, bucket: 'payment-screenshots',
+          path, mimeType: mime, upsert: false,
+        });
+        setUploading(false);
+        if (uploadError || !url) {
+          Alert.alert('Upload Failed', uploadError ?? 'Could not upload screenshot.');
+          return;
+        }
+        screenshotUrl = url;
+      }
+
+      const { request, autoBooked, error } = await submitBookingRequest({
+        customerId:        null,
+        customerName:      name.trim(),
+        phone:             phone.trim(),
+        bookingDate, turf, slotLabel,
+        sport:             selectedSport!.key,
+        paymentMethod:     payMethod,
+        screenshotUrl,
+        bookingSourceRole,
+        createdBy:         profile?.id ?? null,
+        advanceAmount:     advanceAmt,
+        finalAmount:       finalPrice,
       });
+
+      if (error) {
+        if (error.includes('approval')) {
+          Alert.alert('Booking Submitted', 'Your booking will be confirmed after owner review.');
+          if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
+          else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
+          if (holdId) await releaseSlotHold(holdId);
+          onSuccess(false); return;
+        }
+        Alert.alert('Error', error); return;
+      }
+
+      if (!request) { Alert.alert('Error', 'Could not submit request.'); return; }
+
+      if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
+      else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
+      if (holdId) await releaseSlotHold(holdId);
+
+      onSuccess(autoBooked);
+    } catch (err) {
+      console.error('handleSubmit (staff) failed:', err);
+      Alert.alert('Error', 'Something went wrong while submitting the booking. Please try again.');
+    } finally {
+      setSubmitting(false);
       setUploading(false);
-      if (uploadError || !url) {
-        Alert.alert('Upload Failed', uploadError ?? 'Could not upload screenshot.');
-        setSubmitting(false); return;
-      }
-      screenshotUrl = url;
     }
-
-    const { request, autoBooked, error } = await submitBookingRequest({
-      customerId:        null,
-      customerName:      name.trim(),
-      phone:             phone.trim(),
-      bookingDate, turf, slotLabel,
-      sport:             selectedSport!.key,
-      paymentMethod:     payMethod,
-      screenshotUrl,
-      bookingSourceRole,
-      createdBy:         profile?.id ?? null,
-      advanceAmount:     advanceAmt,
-      finalAmount:       finalPrice,
-    });
-
-    setSubmitting(false);
-
-    if (error) {
-      if (error.includes('approval')) {
-        Alert.alert('Booking Submitted', 'Your booking will be confirmed after owner review.');
-        if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
-        else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
-        if (holdId) await releaseSlotHold(holdId);
-        onSuccess(false); return;
-      }
-      Alert.alert('Error', error); return;
-    }
-
-    if (!request) { Alert.alert('Error', 'Could not submit request.'); return; }
-
-    if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
-    else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
-    if (holdId) await releaseSlotHold(holdId);
-
-    onSuccess(autoBooked);
   };
 
   // Called by RazorpayPaymentSheet only after the backend has verified the
@@ -332,43 +341,54 @@ export default function BookingRequestModal({
   // so there's no risk of it double-booking against the webhook's own finalize.
   const finalizeCustomerBooking = async (_paymentId: string) => {
     setSubmitting(true);
-    if (profile?.id) await upsertCustomerPhone(profile.id, phone.trim());
+    try {
+      if (profile?.id) await upsertCustomerPhone(profile.id, phone.trim());
 
-    if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
-    else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
-    if (holdId) await releaseSlotHold(holdId);
+      if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
+      else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
+      if (holdId) await releaseSlotHold(holdId);
 
-    const status = pendingRequestId
-      ? await fetchBookingRequestStatus(pendingRequestId)
-      : 'unknown';
+      const status = pendingRequestId
+        ? await fetchBookingRequestStatus(pendingRequestId)
+        : 'unknown';
 
-    setSubmitting(false);
-    setRazorpaySheetVisible(false);
+      if (status === 'approved') {
+        onSuccess(true);
+        return;
+      }
 
-    if (status === 'approved') {
-      onSuccess(true);
-      return;
-    }
+      if (status === 'pending') {
+        // Payment verified server-side, but the auto-book insert lost a race for
+        // the exact slot — reverted to 'pending' for manual owner review.
+        Alert.alert(
+          'Payment Received',
+          `Your ₹${advanceAmt} payment is verified and safe, but this exact slot was taken moments ago. ` +
+          `Our team will confirm your booking on another slot or process a refund shortly.`,
+        );
+        onSuccess(false);
+        return;
+      }
 
-    if (status === 'pending') {
-      // Payment verified server-side, but the auto-book insert lost a race for
-      // the exact slot — reverted to 'pending' for manual owner review.
+      // Rare: server hasn't finalized yet, or paymentId came back without a
+      // pendingRequestId to check (shouldn't happen in the normal flow).
       Alert.alert(
-        'Payment Received',
-        `Your ₹${advanceAmt} payment is verified and safe, but this exact slot was taken moments ago. ` +
-        `Our team will confirm your booking on another slot or process a refund shortly.`,
+        'Payment Received — Confirming',
+        'Your payment is verified. We could not immediately confirm the slot assignment — our team will verify and confirm your booking shortly.',
       );
       onSuccess(false);
-      return;
+    } catch (err) {
+      // Payment was already taken and verified server-side before this callback
+      // fired — never tell the user it failed. Just reassure them it's being handled.
+      console.error('finalizeCustomerBooking failed:', err);
+      Alert.alert(
+        'Payment Received — Confirming',
+        'Your payment is verified. We hit a snag confirming the slot on this screen — our team will verify and confirm your booking shortly.',
+      );
+      onSuccess(false);
+    } finally {
+      setSubmitting(false);
+      setRazorpaySheetVisible(false);
     }
-
-    // Rare: server hasn't finalized yet, or paymentId came back without a
-    // pendingRequestId to check (shouldn't happen in the normal flow).
-    Alert.alert(
-      'Payment Received — Confirming',
-      'Your payment is verified. We could not immediately confirm the slot assignment — our team will verify and confirm your booking shortly.',
-    );
-    onSuccess(false);
   };
 
   return (

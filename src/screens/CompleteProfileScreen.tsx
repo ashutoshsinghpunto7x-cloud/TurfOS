@@ -30,18 +30,23 @@ export default function CompleteProfileScreen() {
     if (!data.session) return;
 
     setSaving(true);
-    const { error } = await saveUserRole(data.session.user.id, selected);
-    if (error) {
-      Alert.alert('Error', error);
-      setSaving(false);
-      return;
-    }
+    try {
+      const { error } = await saveUserRole(data.session.user.id, selected);
+      if (error) {
+        Alert.alert('Error', error);
+        return;
+      }
 
-    const profile = await getProfileByUserId(data.session.user.id);
-    setSaving(false);
-    if (profile) {
-      useStore.setState({ profileMissing: false });
-      setProfile(profile);
+      const profile = await getProfileByUserId(data.session.user.id);
+      if (profile) {
+        useStore.setState({ profileMissing: false });
+        setProfile(profile);
+      }
+    } catch (err) {
+      console.error('handleSave (CompleteProfile) failed:', err);
+      Alert.alert('Error', 'Could not save your role. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 

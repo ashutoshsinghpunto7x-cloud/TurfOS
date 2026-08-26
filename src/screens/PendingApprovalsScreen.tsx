@@ -119,18 +119,23 @@ export default function PendingApprovalsScreen() {
   const load = useCallback(async () => {
     if (!isPrivileged) return;
     setLoading(true);
-    const promises: Promise<any>[] = [
-      fetchPendingRequests(),
-      fetchAllRequests(60),
-      fetchBookingsForDate({ date: todayISO, turf: 'Turf A' }),
-    ];
-    if (isOwner) promises.push(fetchAccountRequests());
-    const [pendingRes, allRes, confirmedRes, accountRes] = await Promise.all(promises);
-    setPendingReqs(pendingRes.requests);
-    setAllReqs(allRes.requests);
-    setConfirmedBookings(confirmedRes.bookings);
-    if (isOwner && accountRes) setAccountReqs(accountRes.requests ?? []);
-    setLoading(false);
+    try {
+      const promises: Promise<any>[] = [
+        fetchPendingRequests(),
+        fetchAllRequests(60),
+        fetchBookingsForDate({ date: todayISO, turf: 'Turf A' }),
+      ];
+      if (isOwner) promises.push(fetchAccountRequests());
+      const [pendingRes, allRes, confirmedRes, accountRes] = await Promise.all(promises);
+      setPendingReqs(pendingRes.requests);
+      setAllReqs(allRes.requests);
+      setConfirmedBookings(confirmedRes.bookings);
+      if (isOwner && accountRes) setAccountReqs(accountRes.requests ?? []);
+    } catch (err) {
+      console.error('PendingApprovalsScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [isPrivileged, isOwner, todayISO]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -144,12 +149,18 @@ export default function PendingApprovalsScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Approve', onPress: async () => {
         setApproving(true);
-        const { error } = await approveBookingRequest({ request: selected, reviewerId: profile.id, reviewerRole: role, finalAmount: amount });
-        setApproving(false);
-        if (error) { Alert.alert('Error', error); return; }
-        setSelected(null);
-        Alert.alert('✓ Approved', `${selected.customer_name}'s booking is confirmed.`);
-        await load();
+        try {
+          const { error } = await approveBookingRequest({ request: selected, reviewerId: profile.id, reviewerRole: role, finalAmount: amount });
+          if (error) { Alert.alert('Error', error); return; }
+          setSelected(null);
+          Alert.alert('✓ Approved', `${selected.customer_name}'s booking is confirmed.`);
+          await load();
+        } catch (err) {
+          console.error('handleApproveBooking failed:', err);
+          Alert.alert('Error', 'Could not approve booking. Please try again.');
+        } finally {
+          setApproving(false);
+        }
       }},
     ]);
   };
@@ -161,11 +172,17 @@ export default function PendingApprovalsScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reject', style: 'destructive', onPress: async () => {
         setRejecting(true);
-        const { error } = await rejectBookingRequest({ requestId: selected.id, reviewerId: profile.id, reviewerRole: role });
-        setRejecting(false);
-        if (error) { Alert.alert('Error', error); return; }
-        setSelected(null);
-        await load();
+        try {
+          const { error } = await rejectBookingRequest({ requestId: selected.id, reviewerId: profile.id, reviewerRole: role });
+          if (error) { Alert.alert('Error', error); return; }
+          setSelected(null);
+          await load();
+        } catch (err) {
+          console.error('handleRejectBooking failed:', err);
+          Alert.alert('Error', 'Could not reject booking. Please try again.');
+        } finally {
+          setRejecting(false);
+        }
       }},
     ]);
   };
@@ -212,17 +229,23 @@ export default function PendingApprovalsScreen() {
     const pad = (n: number) => String(n).padStart(2, '0');
     const newSlot = `${pad(sh)}:${pad(sm)} ${newStartPeriod}–${pad(eh)}:${pad(em)} ${newEndPeriod}`;
     setSavingEdit(true);
-    const result = await editBookingTime({
-      bookingId: selectedBooking.id, newSlot, bookingDate: selectedBooking.booking_date,
-      turf: selectedBooking.turf, changedBy: profile.id, changedByRole: role,
-      oldSlot: selectedBooking.slot, reason: editReason.trim() || `Time edited by ${role}`,
-    });
-    setSavingEdit(false);
-    if (result.error === 'CONFLICT') { Alert.alert('Slot Conflict', result.conflictMessage ?? 'Slot already booked.'); return; }
-    if (result.error) { Alert.alert('Error', result.error); return; }
-    setEditSlotModal(false); setSelectedBooking(null);
-    Alert.alert('✓ Updated', 'Booking time updated successfully.');
-    await load();
+    try {
+      const result = await editBookingTime({
+        bookingId: selectedBooking.id, newSlot, bookingDate: selectedBooking.booking_date,
+        turf: selectedBooking.turf, changedBy: profile.id, changedByRole: role,
+        oldSlot: selectedBooking.slot, reason: editReason.trim() || `Time edited by ${role}`,
+      });
+      if (result.error === 'CONFLICT') { Alert.alert('Slot Conflict', result.conflictMessage ?? 'Slot already booked.'); return; }
+      if (result.error) { Alert.alert('Error', result.error); return; }
+      setEditSlotModal(false); setSelectedBooking(null);
+      Alert.alert('✓ Updated', 'Booking time updated successfully.');
+      await load();
+    } catch (err) {
+      console.error('handleSaveTimeEdit failed:', err);
+      Alert.alert('Error', 'Could not update booking time. Please try again.');
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   // ── Account handlers ──────────────────────────────────────────────────────────

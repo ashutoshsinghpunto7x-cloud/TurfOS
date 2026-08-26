@@ -44,12 +44,17 @@ export default function SettingsScreen() {
   const load = useCallback(async () => {
     if (!profile?.id) return;
     setLoading(true);
-    // .maybeSingle() instead of .single() — a first-time owner with no
-    // owner_settings row yet is expected, not an error (avoids a 406 from
-    // PostgREST and lets the defaults below stand).
-    const { data } = await supabase.from('owner_settings').select('allow_staff_requests, online_approval_mode').eq('owner_id', profile.id).maybeSingle();
-    if (data) setSettings({ allow_staff_requests: (data as any).allow_staff_requests !== false, online_approval_mode: (data as any).online_approval_mode !== false });
-    setLoading(false);
+    try {
+      // .maybeSingle() instead of .single() — a first-time owner with no
+      // owner_settings row yet is expected, not an error (avoids a 406 from
+      // PostgREST and lets the defaults below stand).
+      const { data } = await supabase.from('owner_settings').select('allow_staff_requests, online_approval_mode').eq('owner_id', profile.id).maybeSingle();
+      if (data) setSettings({ allow_staff_requests: (data as any).allow_staff_requests !== false, online_approval_mode: (data as any).online_approval_mode !== false });
+    } catch (err) {
+      console.error('SettingsScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [profile?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -58,9 +63,16 @@ export default function SettingsScreen() {
     if (!profile?.id) return;
     setSaving(key);
     setSettings((s) => ({ ...s, [key]: val }));
-    const { error } = await supabase.from('owner_settings').upsert({ owner_id: profile.id, [key]: val, updated_at: new Date().toISOString() });
-    if (error) { Alert.alert('Error', 'Could not save setting.'); setSettings((s) => ({ ...s, [key]: !val })); }
-    setSaving(null);
+    try {
+      const { error } = await supabase.from('owner_settings').upsert({ owner_id: profile.id, [key]: val, updated_at: new Date().toISOString() });
+      if (error) throw error;
+    } catch (err) {
+      console.error('toggle setting failed:', err);
+      Alert.alert('Error', 'Could not save setting.');
+      setSettings((s) => ({ ...s, [key]: !val }));
+    } finally {
+      setSaving(null);
+    }
   };
 
   return (

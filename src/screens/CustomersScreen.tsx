@@ -191,10 +191,15 @@ export default function CustomersScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { customers: fetched, error } = await fetchRealCustomers();
-    if (error) Alert.alert('Error', error);
-    else setCustomers(fetched);
-    setLoading(false);
+    try {
+      const { customers: fetched, error } = await fetchRealCustomers();
+      if (error) Alert.alert('Error', error);
+      else setCustomers(fetched);
+    } catch (err) {
+      console.error('CustomersScreen load failed:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -211,35 +216,46 @@ export default function CustomersScreen() {
     }
     setSelected(customer);
     setLoadingCoupons(true);
-    const { coupons: fetched } = await fetchCoupons();
-    setCoupons(fetched.filter((c) => c.is_active));
-    setLoadingCoupons(false);
-    setCouponModal(true);
+    try {
+      const { coupons: fetched } = await fetchCoupons();
+      setCoupons(fetched.filter((c) => c.is_active));
+      setCouponModal(true);
+    } catch (err) {
+      console.error('handleOpenCouponSend failed:', err);
+      Alert.alert('Error', 'Could not load coupons. Please try again.');
+    } finally {
+      setLoadingCoupons(false);
+    }
   };
 
   const handleSendCoupon = async (coupon: Coupon, customer: CustomerSummary) => {
     if (!customer.customer_id || !profile?.id) return;
     setSendingCoupon(true);
+    try {
+      // Each send creates a unique sent_coupon instance (Task 7)
+      const { sentCoupon, error } = await sendCouponToCustomer({
+        coupon,
+        customerId:   customer.customer_id,
+        customerName: customer.customer_name,
+        sentBy:       profile.id,
+      });
 
-    // Each send creates a unique sent_coupon instance (Task 7)
-    const { sentCoupon, error } = await sendCouponToCustomer({
-      coupon,
-      customerId:   customer.customer_id,
-      customerName: customer.customer_name,
-      sentBy:       profile.id,
-    });
+      if (error || !sentCoupon) {
+        Alert.alert('Send Failed', error ?? 'Could not send coupon.');
+        return;
+      }
 
-    setSendingCoupon(false);
-    if (error || !sentCoupon) {
-      Alert.alert('Send Failed', error ?? 'Could not send coupon.');
-      return;
+      Alert.alert(
+        '✓ Coupon Sent',
+        `Coupon "${coupon.code}" has been sent to ${customer.customer_name}.\n\nUnique ID: ${sentCoupon.id.slice(0, 8)}…\n\nThey will see it in their notification bell.`,
+      );
+      setCouponModal(false);
+    } catch (err) {
+      console.error('handleSendCoupon failed:', err);
+      Alert.alert('Error', 'Could not send coupon. Please try again.');
+    } finally {
+      setSendingCoupon(false);
     }
-
-    Alert.alert(
-      '✓ Coupon Sent',
-      `Coupon "${coupon.code}" has been sent to ${customer.customer_name}.\n\nUnique ID: ${sentCoupon.id.slice(0, 8)}…\n\nThey will see it in their notification bell.`,
-    );
-    setCouponModal(false);
   };
 
   const handleToggleBadge = async (customer: CustomerSummary) => {

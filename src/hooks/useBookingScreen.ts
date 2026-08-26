@@ -214,17 +214,22 @@ export function useBookingScreen(
 
   const loadBookings = useCallback(async () => {
     setLoadingSlots(true);
-    const [bookingsRes, holdsRes, currentRes] = await Promise.all([
-      fetchBookingsForDate({ date: toISO(selectedDate), turf: DEFAULT_TURF }),
-      fetchActiveHoldsForDate({ bookingDate: toISO(selectedDate), turf: DEFAULT_TURF }),
-      isToday(selectedDate)
-        ? fetchCurrentBooking(DEFAULT_TURF)
-        : Promise.resolve({ booking: null, error: null }),
-    ]);
-    setBookings(bookingsRes.bookings);
-    setActiveHolds(holdsRes);
-    setCurrentBooking(currentRes.booking);
-    setLoadingSlots(false);
+    try {
+      const [bookingsRes, holdsRes, currentRes] = await Promise.all([
+        fetchBookingsForDate({ date: toISO(selectedDate), turf: DEFAULT_TURF }),
+        fetchActiveHoldsForDate({ bookingDate: toISO(selectedDate), turf: DEFAULT_TURF }),
+        isToday(selectedDate)
+          ? fetchCurrentBooking(DEFAULT_TURF)
+          : Promise.resolve({ booking: null, error: null }),
+      ]);
+      setBookings(bookingsRes.bookings);
+      setActiveHolds(holdsRes);
+      setCurrentBooking(currentRes.booking);
+    } catch (err) {
+      console.error('loadBookings failed:', err);
+    } finally {
+      setLoadingSlots(false);
+    }
   }, [selectedDate]);
 
   useEffect(() => {
@@ -300,36 +305,42 @@ export function useBookingScreen(
     if (timeError) { Alert.alert('Invalid Time', timeError); return; }
     if (!userId)   { Alert.alert('Error', 'You must be signed in.'); return; }
 
-    const [freshBookingsRes, freshHolds] = await Promise.all([
-      fetchBookingsForDate({ date: toISO(selectedDate), turf: DEFAULT_TURF }),
-      fetchActiveHoldsForDate({ bookingDate: toISO(selectedDate), turf: DEFAULT_TURF }),
-    ]);
-    setBookings(freshBookingsRes.bookings);
-    setActiveHolds(freshHolds);
+    try {
+      const [freshBookingsRes, freshHolds] = await Promise.all([
+        fetchBookingsForDate({ date: toISO(selectedDate), turf: DEFAULT_TURF }),
+        fetchActiveHoldsForDate({ bookingDate: toISO(selectedDate), turf: DEFAULT_TURF }),
+      ]);
+      setBookings(freshBookingsRes.bookings);
+      setActiveHolds(freshHolds);
 
-    const conflict = detectSlotConflict(
-      startTotalM, endTotalM, freshBookingsRes.bookings, freshHolds,
-    );
-    if (conflict) {
-      Alert.alert(
-        conflict.type === 'booked' ? '🚫 Slot Already Booked' : '⏳ Slot Under Process',
-        conflict.message,
+      const conflict = detectSlotConflict(
+        startTotalM, endTotalM, freshBookingsRes.bookings, freshHolds,
       );
-      return;
+      if (conflict) {
+        Alert.alert(
+          conflict.type === 'booked' ? '🚫 Slot Already Booked' : '⏳ Slot Under Process',
+          conflict.message,
+        );
+        return;
+      }
+
+      setAcquiringHold(true);
+      const result = await acquireSlotHold({
+        bookingDate: toISO(selectedDate), turf: DEFAULT_TURF,
+        slotLabel, userId,
+      });
+
+      if (result.error) { Alert.alert('Hold Failed', result.error); return; }
+
+      setHoldState({ holdId: result.holdId, queuePos: result.queuePos, expiresAt: result.expiresAt });
+      setRequestModalOpen(true);
+      loadBookings();
+    } catch (err) {
+      console.error('handleOpenRequestModal failed:', err);
+      Alert.alert('Error', 'Something went wrong while checking slot availability. Please try again.');
+    } finally {
+      setAcquiringHold(false);
     }
-
-    setAcquiringHold(true);
-    const result = await acquireSlotHold({
-      bookingDate: toISO(selectedDate), turf: DEFAULT_TURF,
-      slotLabel, userId,
-    });
-    setAcquiringHold(false);
-
-    if (result.error) { Alert.alert('Hold Failed', result.error); return; }
-
-    setHoldState({ holdId: result.holdId, queuePos: result.queuePos, expiresAt: result.expiresAt });
-    setRequestModalOpen(true);
-    loadBookings();
   };
 
   return {

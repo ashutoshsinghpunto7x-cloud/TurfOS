@@ -256,17 +256,27 @@ export default function POSScreen() {
 
   const loadItems = useCallback(async () => {
     setLoadingItems(true);
-    const { items: fetched, error } = await fetchPOSItems();
-    if (error) Alert.alert('Load Error', error);
-    else setItems(fetched);
-    setLoadingItems(false);
+    try {
+      const { items: fetched, error } = await fetchPOSItems();
+      if (error) Alert.alert('Load Error', error);
+      else setItems(fetched);
+    } catch (err) {
+      console.error('POSScreen loadItems failed:', err);
+    } finally {
+      setLoadingItems(false);
+    }
   }, []);
 
   const loadTransactions = useCallback(async () => {
     setLoadingTx(true);
-    const { transactions: fetched } = await fetchRecentTransactions(20);
-    setTransactions(fetched);
-    setLoadingTx(false);
+    try {
+      const { transactions: fetched } = await fetchRecentTransactions(20);
+      setTransactions(fetched);
+    } catch (err) {
+      console.error('POSScreen loadTransactions failed:', err);
+    } finally {
+      setLoadingTx(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -300,29 +310,34 @@ export default function POSScreen() {
 
   const handleConfirmSale = async () => {
     setSaving(true);
-    const lines = cartItems.map((c) => ({
-      itemId: c.posItem.id, itemName: c.posItem.name,
-      quantity: c.qty, unitPrice: c.posItem.price,
-    }));
-    const { transaction, error } = await saveSale({
-      customer: linkedBookingCustomer ?? 'Walk-in',
-      lines, createdBy: profile?.id ?? null, bookingId: linkedBookingId,
-    });
-    if (error || !transaction) {
+    try {
+      const lines = cartItems.map((c) => ({
+        itemId: c.posItem.id, itemName: c.posItem.name,
+        quantity: c.qty, unitPrice: c.posItem.price,
+      }));
+      const { transaction, error } = await saveSale({
+        customer: linkedBookingCustomer ?? 'Walk-in',
+        lines, createdBy: profile?.id ?? null, bookingId: linkedBookingId,
+      });
+      if (error || !transaction) {
+        Alert.alert('Sale Failed', error ?? 'Could not save transaction.');
+        return;
+      }
+      await reduceStock(lines.map((l) => ({ itemId: l.itemId, quantity: l.quantity })));
+      setTransactions((prev) => [transaction, ...prev]);
+      clearCart();
+      setConfirmModal(false);
+      await loadItems();
+      setLastTxId(transaction.id);
+      setShowUndo(true);
+      const timer = setTimeout(() => { setShowUndo(false); setLastTxId(null); }, 5000);
+      setUndoTimer(timer);
+    } catch (err) {
+      console.error('handleConfirmSale failed:', err);
+      Alert.alert('Error', 'Could not complete sale. Please try again.');
+    } finally {
       setSaving(false);
-      Alert.alert('Sale Failed', error ?? 'Could not save transaction.');
-      return;
     }
-    await reduceStock(lines.map((l) => ({ itemId: l.itemId, quantity: l.quantity })));
-    setTransactions((prev) => [transaction, ...prev]);
-    clearCart();
-    setConfirmModal(false);
-    setSaving(false);
-    await loadItems();
-    setLastTxId(transaction.id);
-    setShowUndo(true);
-    const timer = setTimeout(() => { setShowUndo(false); setLastTxId(null); }, 5000);
-    setUndoTimer(timer);
   };
 
   const handleUndo = async () => {

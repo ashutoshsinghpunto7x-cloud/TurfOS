@@ -313,16 +313,23 @@ export default function StaffDashboardScreen() {
   const handleSave = async () => {
     if (!selectedSlot) return;
     setSaving(true);
-    await supabase.from('bookings').update({
-      slot:     editSlotTxt.trim(),
-      customer: editCustomer.trim(),
-      phone:    editPhone.trim(),
-      amount:   Number(editAmount) || 0,
-      status:   editStatus,
-    }).eq('id', selectedSlot.id);
-    setSaving(false);
-    setSelectedSlot(null);
-    loadBookings();
+    try {
+      const { error } = await supabase.from('bookings').update({
+        slot:     editSlotTxt.trim(),
+        customer: editCustomer.trim(),
+        phone:    editPhone.trim(),
+        amount:   Number(editAmount) || 0,
+        status:   editStatus,
+      }).eq('id', selectedSlot.id);
+      if (error) { Alert.alert('Error', error.message); return; }
+      setSelectedSlot(null);
+      loadBookings();
+    } catch (err) {
+      console.error('handleSave failed:', err);
+      Alert.alert('Error', 'Could not save changes. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Staff';

@@ -6,7 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useStore } from '../store/useStore';
 import { getExistingSession, getProfileByUserId } from '../services/authService';
 import { supabase } from '../lib/supabase';
-import { recoverPendingPayment } from '../services/pendingPaymentRecovery';
+import { recoverPendingPayment, recoverFromRedirect } from '../services/pendingPaymentRecovery';
 
 import WelcomeScreen          from '../screens/WelcomeScreen';
 import LoginScreen            from '../screens/LoginScreen';
@@ -129,10 +129,8 @@ export default function RootNavigator() {
   useEffect(() => {
     if (booting || !profile?.id) return;
     let cancelled = false;
-    (async () => {
-      const result = await recoverPendingPayment();
-      if (cancelled || !result) return;
-      const { status } = result;
+
+    const report = (status: 'approved' | 'pending' | 'rejected' | 'unknown') => {
       if (status === 'approved') {
         Alert.alert('✓ Booking Confirmed', 'Good news — your last booking payment went through and your slot is confirmed.');
       } else if (status === 'rejected') {
@@ -142,7 +140,25 @@ export default function RootNavigator() {
         // or the webhook hasn't landed yet). Don't alarm the user; keep it light.
         Alert.alert('Checking Your Last Booking', 'Your last payment is still being confirmed. Check your Bookings tab shortly — if it doesn\'t show up, contact support.');
       }
+    };
+
+    (async () => {
+      // Primary path — the razorpay-callback redirect (see RazorpayPaymentSheet.
+      // web.tsx). Fires via a fresh navigation Razorpay itself drives, so it
+      // survives even a fully killed tab. Checked first because it's the
+      // freshest, most authoritative signal when present.
+      const redirected = await recoverFromRedirect();
+      if (cancelled) return;
+      if (redirected) { report(redirected.status); return; }
+
+      // Fallback — the AsyncStorage record from before checkout opened.
+      // Covers cases where no redirect ever made it back at all (e.g. the
+      // browser process was killed outright, not just this tab's renderer).
+      const stored = await recoverPendingPayment();
+      if (cancelled || !stored) return;
+      report(stored.status);
     })();
+
     return () => { cancelled = true; };
   }, [booting, profile?.id]);
 

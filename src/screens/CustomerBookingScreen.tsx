@@ -332,6 +332,7 @@ export default function CustomerBookingScreen() {
   const durAnim    = useRef(new Animated.Value(0)).current;
   const btnAnim    = useRef(new Animated.Value(0)).current;
   const btnFloat   = useRef(new Animated.Value(0)).current;
+  const btnFloatLoop = useRef<Animated.CompositeAnimation | null>(null);
 
   const applyEnd = useCallback((h24: number, m: number, dur: number) => {
     const total = h24 * 60 + m + dur;
@@ -384,13 +385,29 @@ export default function CustomerBookingScreen() {
     ]).start();
 
     // Subtle float on continue button
-    Animated.loop(
+    btnFloatLoop.current = Animated.loop(
       Animated.sequence([
         Animated.timing(btnFloat, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
         Animated.timing(btnFloat, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
-    ).start();
+    );
+    btnFloatLoop.current.start();
+    return () => btnFloatLoop.current?.stop();
   }, []);
+
+  // Stop every continuous/background animation and re-render source while the
+  // Razorpay sheet is up — on low-RAM Android devices the checkout iframe and
+  // a UPI app hand-off already push memory hard, and this screen keeps
+  // rendering underneath the modal (Modal is just an overlay, not a separate
+  // surface, especially on web). Every bit of main-thread/JS-heap load we
+  // shave off here reduces the odds of Chrome killing the tab mid-payment.
+  useEffect(() => {
+    if (screen.requestModalOpen) {
+      btnFloatLoop.current?.stop();
+    } else {
+      btnFloatLoop.current?.start();
+    }
+  }, [screen.requestModalOpen]);
 
   const btnTranslate = btnFloat.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
 

@@ -40,11 +40,52 @@ export async function clearPendingPayment(): Promise<void> {
   try { await AsyncStorage.removeItem(STORAGE_KEY); } catch {}
 }
 
+// Reads the ?rzp_check=<id> query param left by the razorpay-callback Edge
+// Function's redirect (see supabase/functions/razorpay-callback and
+// RazorpayPaymentSheet.web.tsx's callback_url) and, if present, resolves it.
+// This is the primary recovery path — it fires via a fresh top-level
+// navigation that Razorpay itself drives after payment, so it works even
+// when the tab's JS state (including the AsyncStorage-based path below) was
+// wiped by a crash during a UPI-app hand-off. Web only. Nothing in the URL
+// is trusted beyond "which booking_request to look up" — the actual status
+// always comes from a fresh, authenticated DB read.
+export async function recoverFromRedirect(): Promise<{
+  status: 'approved' | 'pending' | 'rejected' | 'unknown';
+} | null> {
+  if (typeof window === 'undefined' || !window.location || !window.history) return null;
+
+  let url: URL;
+  try {
+    url = new URL(window.location.href);
+  } catch {
+    return null;
+  }
+
+  if (!url.searchParams.has('rzp_check')) return null;
+  const id = url.searchParams.get('rzp_check') ?? '';
+
+  // Strip it from the address bar immediately — a manual refresh or a
+  // shared link shouldn't re-trigger this.
+  url.searchParams.delete('rzp_check');
+  url.searchParams.delete('rzp_note');
+  try {
+    window.history.replaceState({}, '', url.toString());
+  } catch {}
+
+  if (!id) return null;   // redirected with nothing to check (e.g. an error before an order was matched)
+
+  const status = await fetchBookingRequestStatus(id);
+  await clearPendingPayment();   // resolves the same attempt the AsyncStorage path was tracking
+  return { status };
+}
+
 // Checks for a leftover pending payment from a previous session and resolves
-// its outcome. Call once at app boot. Returns null if there's nothing to
-// recover. Always clears the stored record — a 'pending' outcome is a
-// legitimate settled state (awaiting manual review / webhook) that we only
-// want to surface once, not re-poll forever.
+// its outcome. Call once at app boot, as a fallback when recoverFromRedirect
+// found nothing (e.g. native, or the redirect itself never made it back).
+// Returns null if there's nothing to recover. Always clears the stored
+// record — a 'pending' outcome is a legitimate settled state (awaiting
+// manual review / webhook) that we only want to surface once, not re-poll
+// forever.
 export async function recoverPendingPayment(): Promise<{
   record: PendingPaymentRecord;
   status: 'approved' | 'pending' | 'rejected' | 'unknown';

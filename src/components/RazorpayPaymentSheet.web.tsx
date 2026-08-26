@@ -109,6 +109,23 @@ export default function RazorpayPaymentSheet({
 
     const cleanPhone = (customerPhone ?? '').replace(/\D/g, '').slice(-10);
 
+    // callback_url + redirect:true: for payment methods that leave this page
+    // (UPI intent app-switch, netbanking) Checkout now completes via a
+    // full top-level redirect through our razorpay-callback Edge Function,
+    // instead of relying on a popup/this same tab surviving to run
+    // `handler`. That's the fix for the actual crash — authorizing via a
+    // UPI app backgrounds this tab, and the OS can kill its renderer to
+    // reclaim memory while the user is in the UPI app, wiping this JS
+    // state before `handler` ever gets a chance to run. The redirect path
+    // is a fresh top-level navigation, server-verified, independent of
+    // whatever happened to this page — RootNavigator picks up the result
+    // via pendingPaymentRecovery.recoverFromRedirect() on the next load.
+    // `handler` is kept for whichever payment methods complete without
+    // ever leaving this page (verify with a real card/UPI test after
+    // deploying — Razorpay's exact per-method behavior isn't something we
+    // can confirm without a live checkout).
+    const callbackUrl = `${(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')}/functions/v1/razorpay-callback`;
+
     const options = {
       key:         orderResult.keyId,
       amount:      orderResult.amount,
@@ -122,6 +139,8 @@ export default function RazorpayPaymentSheet({
         contact: cleanPhone,
       },
       theme: { color: '#7c3aed' },
+      callback_url: callbackUrl,
+      redirect:     true,
       modal: {
         ondismiss: () => {
           setState('cancelled');

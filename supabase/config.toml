@@ -13,3 +13,12 @@
 
 [functions.razorpay-webhook]
 verify_jwt = false
+
+# razorpay-callback is the callback_url target for Razorpay Checkout's
+# redirect flow (see RazorpayPaymentSheet.web.tsx) — invoked by a plain
+# browser form POST, not our own authenticated fetch, so there's no Supabase
+# JWT to verify. Authenticity comes from the Razorpay HMAC signature
+# (RAZORPAY_KEY_SECRET) instead — see supabase/functions/razorpay-callback/index.ts.
+
+[functions.razorpay-callback]
+verify_jwt = false

@@ -1,0 +1,15 @@
+# Supabase project config — currently only used to control per-function
+# JWT verification for Edge Functions.
+#
+# create-razorpay-order / verify-razorpay-payment are called by the app
+# with the logged-in user's Supabase JWT, so they keep the platform default
+# (verify_jwt = true) and additionally check the token themselves inside
+# the function.
+#
+# razorpay-webhook is called directly by Razorpay's servers — there is no
+# Supabase user session, so platform JWT verification must be off. The
+# function verifies authenticity itself via the Razorpay HMAC signature
+# (RAZORPAY_WEBHOOK_SECRET) instead — see supabase/functions/razorpay-webhook/index.ts.
+
+[functions.razorpay-webhook]
+verify_jwt = false

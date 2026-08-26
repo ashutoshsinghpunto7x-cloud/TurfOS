@@ -9,6 +9,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
 import { signOut } from '../services/authService';
+import { confirmDialog } from '../utils/confirmDialog';
 import { fetchCustomerSentCoupons, markCouponRead, SentCoupon } from '../services/couponService';
 import { useStore } from '../store/useStore';
 import { getClampedWindowWidth } from '../components/WebFrame';
@@ -178,12 +179,12 @@ export default function CustomerDashboardScreen() {
   // ── Sign out ──────────────────────────────────────────────────────────────
   const handleSignOut = () => {
     setProfileMenu(false);
-    Alert.alert('Sign Out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: async () => {
-        await signOut(); setProfile(null);
-      }},
-    ]);
+    confirmDialog(
+      'Sign Out',
+      'Are you sure?',
+      async () => { await signOut(); setProfile(null); },
+      'Sign Out',
+    );
   };
 
   if (loading) {

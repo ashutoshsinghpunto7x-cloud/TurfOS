@@ -18,6 +18,7 @@ import {
 } from 'lucide-react-native';
 import { useStore } from '../store/useStore';
 import { signOut } from '../services/authService';
+import { confirmDialog } from '../utils/confirmDialog';
 import { fetchDashboardMetrics, DashboardMetrics } from '../services/dashboardService';
 import { fetchPendingCount } from '../services/bookingRequestService';
 import { supabase } from '../lib/supabase';
@@ -438,10 +439,12 @@ export default function DashboardScreen() {
 
   const handleSignOut = () => {
     setMenuOpen(false);
-    Alert.alert('Sign Out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: async () => { await signOut(); setProfile(null); } },
-    ]);
+    confirmDialog(
+      'Sign Out',
+      'Are you sure?',
+      async () => { await signOut(); setProfile(null); },
+      'Sign Out',
+    );
   };
 
   const firstName = (profile?.full_name ?? 'Owner').split(' ')[0];

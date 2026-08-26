@@ -10,6 +10,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useStore } from '../store/useStore';
 import { signOut } from '../services/authService';
+import { confirmDialog } from '../utils/confirmDialog';
 import { supabase } from '../lib/supabase';
 import { buildSlotLabel } from '../services/bookingService';
 import { markAttendanceToday, fetchMyAttendanceToday } from '../services/attendanceService';
@@ -281,10 +282,12 @@ export default function StaffDashboardScreen() {
   }, [loadBookings, loadPastBookings]);
 
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: async () => { await signOut(); setProfile(null); } },
-    ]);
+    confirmDialog(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      async () => { await signOut(); setProfile(null); },
+      'Sign Out',
+    );
   };
 
   const handleCancelBooking = async (id: string) => {

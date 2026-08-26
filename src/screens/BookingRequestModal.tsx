@@ -108,7 +108,7 @@ export default function BookingRequestModal({
   const [name, setName]                 = useState(prefillName ?? '');
   const [phone, setPhone]               = useState(prefillPhone ?? '');
   const [selectedSport, setSelectedSport] = useState<SportConfig | null>(null);
-  const [advanceAmtStr, setAdvanceAmtStr] = useState('100');
+  const [advanceAmtStr, setAdvanceAmtStr] = useState('1'); // TESTING: dropped from '100' — revert before production
   const [slotPriceStr, setSlotPriceStr]   = useState('');
 
   const [payMethod, setPayMethod] = useState<'cash' | 'online' | 'razorpay'>(isCustomer ? 'razorpay' : 'cash');
@@ -150,7 +150,7 @@ export default function BookingRequestModal({
       setRazorpaySheetVisible(false);
       setCouponCode(''); setAppliedCoupon(null); setAppliedSentCoupon(null);
       setCouponMessage(''); setCouponMsgType(''); setDiscountAmount(0);
-      setAdvanceAmtStr('100');
+      setAdvanceAmtStr('1'); // TESTING: dropped from '100' — revert before production
     }
   }, [visible, isCustomer]);
 

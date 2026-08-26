@@ -10,7 +10,7 @@ import { useStore } from '../store/useStore';
 import { SportConfig, calculatePrice, fetchBookingsForDate, parseSlotRange } from '../services/bookingService';
 import {
   submitBookingRequest, upsertCustomerPhone, fetchCustomerPhone,
-  fetchOnlineApprovalMode,
+  fetchOnlineApprovalMode, getOrCreatePendingPaymentRequest, fetchBookingRequestStatus,
 } from '../services/bookingRequestService';
 import { releaseSlotHold } from '../services/holdService';
 import {
@@ -40,18 +40,6 @@ async function isSlotStillFree(bookingDate: string, turf: string, slotLabel: str
     const p = parseSlotRange(b.slot);
     return !!p && slotsOverlap(target.startM, target.endM, p.startM, p.endM);
   });
-}
-
-/** After a verified Razorpay payment, confirms the slot actually landed as a
- *  'Confirmed' booking under THIS customer's id — not just that some insert succeeded. */
-async function verifyBookingBelongsToCustomer(
-  bookingDate: string, turf: string, slotLabel: string, customerId: string | null | undefined,
-): Promise<boolean> {
-  if (!customerId) return false;
-  const { bookings } = await fetchBookingsForDate({ date: bookingDate, turf });
-  return bookings.some((b) =>
-    b.status === 'Confirmed' && b.customer_id === customerId && b.slot === slotLabel,
-  );
 }
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -114,6 +102,11 @@ export default function BookingRequestModal({
   const [payMethod, setPayMethod] = useState<'cash' | 'online' | 'razorpay'>(isCustomer ? 'razorpay' : 'cash');
 
   const [razorpaySheetVisible, setRazorpaySheetVisible] = useState(false);
+  // The booking_requests row created BEFORE payment for the instant-book
+  // flow — see getOrCreatePendingPaymentRequest. Lets the server (verify
+  // call or the Razorpay webhook) finalize the actual booking even if this
+  // tab dies right after Razorpay charges the customer.
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
 
   const [screenshotUri, setScreenshotUri]   = useState<string | null>(null);
   const [screenshotMime, setScreenshotMime] = useState<string>('image/jpeg');
@@ -148,6 +141,7 @@ export default function BookingRequestModal({
       setScreenshotUri(null); setSelectedSport(null); setSlotPriceStr('');
       if (isCustomer) setPayMethod('razorpay'); else setPayMethod('cash');
       setRazorpaySheetVisible(false);
+      setPendingRequestId(null);
       setCouponCode(''); setAppliedCoupon(null); setAppliedSentCoupon(null);
       setCouponMessage(''); setCouponMsgType(''); setDiscountAmount(0);
       setAdvanceAmtStr('1'); // TESTING: dropped from '100' — revert before production
@@ -214,8 +208,11 @@ export default function BookingRequestModal({
     return true;
   };
 
-  // Customer flow: charge via real Razorpay checkout FIRST — the booking is only
-  // created after the backend verifies the payment signature (see finalizeCustomerBooking).
+  // Customer flow: create a pending placeholder request FIRST, then charge via
+  // real Razorpay checkout. The placeholder gives the server (verify call, or
+  // the Razorpay webhook if this tab dies right after the charge) something
+  // real to finalize into a Confirmed booking — see finalizeCustomerBooking
+  // and supabase/functions/_shared/finalizeBooking.ts.
   const handleSubmit = async () => {
     if (!validateCommonFields()) return;
 
@@ -224,8 +221,8 @@ export default function BookingRequestModal({
       // expired, or another customer may have confirmed it while this form was open.
       setSubmitting(true);
       const free = await isSlotStillFree(bookingDate, turf, slotLabel);
-      setSubmitting(false);
       if (!free) {
+        setSubmitting(false);
         Alert.alert(
           'Slot No Longer Available',
           'This slot was just booked by someone else. Please go back and pick another time — you have not been charged.',
@@ -234,6 +231,32 @@ export default function BookingRequestModal({
         onClose();
         return;
       }
+
+      if (!profile?.id) {
+        setSubmitting(false);
+        Alert.alert('Error', 'You must be signed in to book.');
+        return;
+      }
+
+      const { id, error: placeholderError } = await getOrCreatePendingPaymentRequest({
+        customerId:        profile.id,
+        customerName:      name.trim(),
+        phone:             phone.trim(),
+        bookingDate, turf, slotLabel,
+        sport:             selectedSport!.key,
+        advanceAmount:     advanceAmt,
+        finalAmount:       finalPrice,
+        bookingSourceRole,
+      });
+
+      setSubmitting(false);
+
+      if (placeholderError || !id) {
+        Alert.alert('Error', placeholderError ?? 'Could not start booking. Please try again.');
+        return;
+      }
+
+      setPendingRequestId(id);
       setRazorpaySheetVisible(true);
       return;
     }
@@ -300,34 +323,36 @@ export default function BookingRequestModal({
 
   // Called by RazorpayPaymentSheet only after the backend has verified the
   // payment signature (verify-razorpay-payment Edge Function) — never before.
-  const finalizeCustomerBooking = async (paymentId: string) => {
+  //
+  // The actual booking is finalized server-side, NOT here — verify-razorpay-payment
+  // already approved the placeholder request (created in handleSubmit, before
+  // Checkout opened) and inserted the Confirmed booking row as part of the same
+  // request/response that produced this callback. This function just reads back
+  // the outcome to show the right message; it never creates a booking itself,
+  // so there's no risk of it double-booking against the webhook's own finalize.
+  const finalizeCustomerBooking = async (_paymentId: string) => {
     setSubmitting(true);
     if (profile?.id) await upsertCustomerPhone(profile.id, phone.trim());
-
-    const { autoBooked, error } = await submitBookingRequest({
-      customerId:        profile?.id ?? null,
-      customerName:      name.trim(),
-      phone:             phone.trim(),
-      bookingDate, turf, slotLabel,
-      sport:             selectedSport!.key,
-      paymentMethod:     'razorpay',
-      screenshotUrl:     `rzp_verified:${paymentId}`,
-      bookingSourceRole,
-      createdBy:         profile?.id ?? null,
-      advanceAmount:     advanceAmt,
-      finalAmount:       finalPrice,
-    });
 
     if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
     else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
     if (holdId) await releaseSlotHold(holdId);
 
-    if (error) {
-      setSubmitting(false);
-      setRazorpaySheetVisible(false);
-      // Payment is verified server-side already (this only runs after Razorpay's onSuccess),
-      // but the auto-book insert lost a race for the exact slot — DB unique constraint kicked
-      // in and the request was reverted to 'pending' for manual owner review.
+    const status = pendingRequestId
+      ? await fetchBookingRequestStatus(pendingRequestId)
+      : 'unknown';
+
+    setSubmitting(false);
+    setRazorpaySheetVisible(false);
+
+    if (status === 'approved') {
+      onSuccess(true);
+      return;
+    }
+
+    if (status === 'pending') {
+      // Payment verified server-side, but the auto-book insert lost a race for
+      // the exact slot — reverted to 'pending' for manual owner review.
       Alert.alert(
         'Payment Received',
         `Your ₹${advanceAmt} payment is verified and safe, but this exact slot was taken moments ago. ` +
@@ -337,26 +362,13 @@ export default function BookingRequestModal({
       return;
     }
 
-    // Payment succeeded AND the insert reported success — now do one more independent
-    // read to confirm the slot is really Confirmed under THIS customer's id before
-    // telling them "you're booked". Catches any edge case the insert path missed.
-    const verified = autoBooked
-      ? await verifyBookingBelongsToCustomer(bookingDate, turf, slotLabel, profile?.id)
-      : false;
-
-    setSubmitting(false);
-    setRazorpaySheetVisible(false);
-
-    if (autoBooked && !verified) {
-      Alert.alert(
-        'Payment Received — Confirming',
-        'Your payment is verified. We could not immediately confirm the slot assignment — our team will verify and confirm your booking shortly.',
-      );
-      onSuccess(false);
-      return;
-    }
-
-    onSuccess(autoBooked);
+    // Rare: server hasn't finalized yet, or paymentId came back without a
+    // pendingRequestId to check (shouldn't happen in the normal flow).
+    Alert.alert(
+      'Payment Received — Confirming',
+      'Your payment is verified. We could not immediately confirm the slot assignment — our team will verify and confirm your booking shortly.',
+    );
+    onSuccess(false);
   };
 
   return (
@@ -597,6 +609,7 @@ export default function BookingRequestModal({
         visible={razorpaySheetVisible}
         amountPaise={advanceAmt * 100}
         amountLabel={`₹${advanceAmt} (Advance)`}
+        bookingRequestId={pendingRequestId ?? undefined}
         idempotencyKey={paymentIdempotencyKey}
         customerName={name}
         customerPhone={phone}

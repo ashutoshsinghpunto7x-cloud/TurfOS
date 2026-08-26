@@ -30,6 +30,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac, timingSafeEqual } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { finalizeBooking } from '../_shared/finalizeBooking.ts';
 
 const RAZORPAY_WEBHOOK_SECRET = Deno.env.get('RAZORPAY_WEBHOOK_SECRET')!;
 const SUPABASE_URL            = Deno.env.get('SUPABASE_URL')!;
@@ -150,34 +151,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ received: true, already_final: true }), { status: 200 });
     }
 
-    // ── 7. Update booking_request / booking status ──────────────────────────
-    // NOTE: this can only finalize bookings that already had a
-    // booking_request_id / booking_id attached to the order *before* payment
-    // (the top-up / remaining-amount flow). For a brand-new customer booking,
-    // BookingRequestModal only creates that row client-side, after payment —
-    // so if the client died before that ran, there is nothing here to attach
-    // to yet. In that case this webhook still guarantees razorpay_payments
-    // ends up correctly marked 'paid', so the payment isn't silently lost —
-    // it just needs manual reconciliation (match by customer_id + amount +
-    // created_at in razorpay_payments where booking_request_id/booking_id
-    // are both null and status = 'paid').
-    if (pr.booking_request_id) {
-      await supabase
-        .from('booking_requests')
-        .update({
-          payment_method:         'razorpay',
-          payment_screenshot_url: `rzp_verified:${payment.id}`,
-          status:                 'pending',
-        })
-        .eq('id', pr.booking_request_id);
-    }
-
-    if (pr.booking_id) {
-      await supabase
-        .from('bookings')
-        .update({ paid: true, status: 'Completed' })
-        .eq('id', pr.booking_id);
-    }
+    // ── 7. Finalize whatever this payment is attached to ────────────────────
+    // Shared with verify-razorpay-payment — see finalizeBooking for what each
+    // case does. Booking requests created via the instant-book placeholder
+    // (BookingRequestModal creates it BEFORE opening Checkout) get approved
+    // and their booking row created right here, even if the client's own tab
+    // died before it could call verify-razorpay-payment itself. A payment
+    // with neither booking_request_id nor booking_id (some other/older
+    // caller) ends up correctly marked 'paid' here regardless, so it's never
+    // silently lost — it just needs manual reconciliation.
+    await finalizeBooking(supabase, pr, payment.id);
 
     return new Response(JSON.stringify({ received: true }), { status: 200 });
 

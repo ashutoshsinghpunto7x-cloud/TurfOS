@@ -5,6 +5,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createHmac } from 'https://deno.land/std@0.168.0/node/crypto.ts';
+import { finalizeBooking } from '../_shared/finalizeBooking.ts';
 
 const RAZORPAY_KEY_SECRET  = Deno.env.get('RAZORPAY_KEY_SECRET')!;
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
@@ -160,31 +161,12 @@ serve(async (req) => {
       );
     }
 
-    // ── 9. Update booking_request / booking status ─────────────────────────
+    // ── 9. Finalize whatever this payment is attached to ────────────────────
+    // Shared with razorpay-webhook so the client-verify path and the
+    // server-side webhook path behave identically (and can't double-book —
+    // finalizeBooking's own conditional update handles that race).
     const pr = paymentRecord as any;
-
-    if (pr.booking_request_id) {
-      // Mark booking request as advance-paid (still needs owner approval for slot confirmation)
-      await supabase
-        .from('booking_requests')
-        .update({
-          payment_method:         'razorpay',
-          payment_screenshot_url: `rzp_verified:${razorpay_payment_id}`, // sentinel value
-          status:                 'pending', // still needs owner to approve
-        })
-        .eq('id', pr.booking_request_id);
-    }
-
-    if (pr.booking_id) {
-      // For direct booking payments (remaining amount), mark paid
-      await supabase
-        .from('bookings')
-        .update({
-          paid:    true,
-          status:  'Completed',
-        })
-        .eq('id', pr.booking_id);
-    }
+    await finalizeBooking(supabase, pr, razorpay_payment_id);
 
     // ── 10. Return success ─────────────────────────────────────────────────
     return new Response(

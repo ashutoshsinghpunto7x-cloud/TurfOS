@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { ActivityIndicator, View, Alert, Text, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, View, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -7,6 +7,7 @@ import { useStore } from '../store/useStore';
 import { getExistingSession, getProfileByUserId } from '../services/authService';
 import { supabase } from '../lib/supabase';
 import { recoverPendingPayment, recoverFromRedirect } from '../services/pendingPaymentRecovery';
+import { infoDialog } from '../utils/confirmDialog';
 
 import WelcomeScreen          from '../screens/WelcomeScreen';
 import LoginScreen            from '../screens/LoginScreen';
@@ -132,13 +133,13 @@ export default function RootNavigator() {
 
     const report = (status: 'approved' | 'pending' | 'rejected' | 'unknown') => {
       if (status === 'approved') {
-        Alert.alert('✓ Booking Confirmed', 'Good news — your last booking payment went through and your slot is confirmed.');
+        infoDialog('✓ Booking Confirmed', 'Good news — your last booking payment went through and your slot is confirmed.');
       } else if (status === 'rejected') {
-        Alert.alert('Booking Not Confirmed', 'Your last payment could not be matched to a confirmed slot. If you were charged, contact support and we\'ll sort it out.');
+        infoDialog('Booking Not Confirmed', 'Your last payment could not be matched to a confirmed slot. If you were charged, contact support and we\'ll sort it out.');
       } else {
         // 'pending' or 'unknown' — still resolvable server-side (manual review
         // or the webhook hasn't landed yet). Don't alarm the user; keep it light.
-        Alert.alert('Checking Your Last Booking', 'Your last payment is still being confirmed. Check your Bookings tab shortly — if it doesn\'t show up, contact support.');
+        infoDialog('Checking Your Last Booking', 'Your last payment is still being confirmed. Check your Bookings tab shortly — if it doesn\'t show up, contact support.');
       }
     };
 

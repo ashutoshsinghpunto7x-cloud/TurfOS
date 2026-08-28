@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, Modal,
+  ActivityIndicator, Modal,
 } from 'react-native';
 // react-native-razorpay is a native module — in Expo Go it is undefined.
 // We load it defensively so the JS bundle doesn't crash on import.

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, Alert,
+  ActivityIndicator, Modal,
   KeyboardAvoidingView, Platform, Animated, Easing,
   ScrollView as RNScrollView,
   NativeSyntheticEvent, NativeScrollEvent,
@@ -15,6 +15,7 @@ import { useBookingScreen } from '../hooks/useBookingScreen';
 import SlotHoldBanner     from '../components/booking/SlotHoldBanner';
 import BookingRequestModal from './BookingRequestModal';
 import { getClampedWindowWidth } from '../components/WebFrame';
+import { infoDialog } from '../utils/confirmDialog';
 
 const SW = getClampedWindowWidth();
 
@@ -714,7 +715,7 @@ export default function CustomerBookingScreen() {
         onSuccess={() => {
           screen.setRequestModalOpen(false);
           screen.loadBookings();
-          Alert.alert('✓ Request Submitted', 'Your booking request has been submitted.');
+          infoDialog('✓ Request Submitted', 'Your booking request has been submitted.');
         }}
         holdId={screen.holdState.holdId}
         bookingDate={toISO(screen.selectedDate)}

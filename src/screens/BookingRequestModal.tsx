@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Modal, ScrollView, ActivityIndicator, Alert, Image,
+  Modal, ScrollView, ActivityIndicator, Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +21,7 @@ import { uploadFileToSupabase, mimeFromUri } from '../utils/uploadHelper';
 import SportsDropdown from '../components/booking/SportsDropdown';
 import RazorpayPaymentSheet from '../components/RazorpayPaymentSheet';
 import { savePendingPayment, clearPendingPayment } from '../services/pendingPaymentRecovery';
+import { infoDialog } from '../utils/confirmDialog';
 
 const QR_SOURCE = require('../../assets/payment_qr.png');
 
@@ -165,7 +166,7 @@ export default function BookingRequestModal({
 
   const handlePickScreenshot = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission Required', 'Please allow photo library access.'); return; }
+    if (!perm.granted) { infoDialog('Permission Required', 'Please allow photo library access.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.75, base64: false,
     });
@@ -177,8 +178,8 @@ export default function BookingRequestModal({
   };
 
   const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) { Alert.alert('Enter Code', 'Please enter a coupon code.'); return; }
-    if (!selectedSport)    { Alert.alert('Select Sport', 'Select a sport first.'); return; }
+    if (!couponCode.trim()) { infoDialog('Enter Code', 'Please enter a coupon code.'); return; }
+    if (!selectedSport)    { infoDialog('Select Sport', 'Select a sport first.'); return; }
     setValidating(true);
     const result = await validateCoupon({ code: couponCode.trim(), bookingAmount: basePrice, customerId: profile?.id });
     setValidating(false);
@@ -202,10 +203,10 @@ export default function BookingRequestModal({
   };
 
   const validateCommonFields = (): boolean => {
-    if (!name.trim())   { Alert.alert('Required', 'Enter customer name.'); return false; }
+    if (!name.trim())   { infoDialog('Required', 'Enter customer name.'); return false; }
     const digits = phone.replace(/\D/g, '');
-    if (digits.length !== 10) { Alert.alert('Required', 'Phone number must be exactly 10 digits.'); return false; }
-    if (!selectedSport) { Alert.alert('Required', 'Select a sport.'); return false; }
+    if (digits.length !== 10) { infoDialog('Required', 'Phone number must be exactly 10 digits.'); return false; }
+    if (!selectedSport) { infoDialog('Required', 'Select a sport.'); return false; }
     return true;
   };
 
@@ -224,7 +225,7 @@ export default function BookingRequestModal({
       try {
         const free = await isSlotStillFree(bookingDate, turf, slotLabel);
         if (!free) {
-          Alert.alert(
+          infoDialog(
             'Slot No Longer Available',
             'This slot was just booked by someone else. Please go back and pick another time — you have not been charged.',
           );
@@ -234,7 +235,7 @@ export default function BookingRequestModal({
         }
 
         if (!profile?.id) {
-          Alert.alert('Error', 'You must be signed in to book.');
+          infoDialog('Error', 'You must be signed in to book.');
           return;
         }
 
@@ -250,7 +251,7 @@ export default function BookingRequestModal({
         });
 
         if (placeholderError || !id) {
-          Alert.alert('Error', placeholderError ?? 'Could not start booking. Please try again.');
+          infoDialog('Error', placeholderError ?? 'Could not start booking. Please try again.');
           return;
         }
 
@@ -264,7 +265,7 @@ export default function BookingRequestModal({
         setRazorpaySheetVisible(true);
       } catch (err) {
         console.error('handleSubmit (customer) failed:', err);
-        Alert.alert('Error', 'Something went wrong. Please try again — you have not been charged.');
+        infoDialog('Error', 'Something went wrong. Please try again — you have not been charged.');
       } finally {
         setSubmitting(false);
       }
@@ -272,7 +273,7 @@ export default function BookingRequestModal({
     }
 
     if (payMethod === 'online' && !screenshotUri) {
-      Alert.alert('Required', 'Please upload the payment screenshot.'); return;
+      infoDialog('Required', 'Please upload the payment screenshot.'); return;
     }
 
     setSubmitting(true);
@@ -290,7 +291,7 @@ export default function BookingRequestModal({
         });
         setUploading(false);
         if (uploadError || !url) {
-          Alert.alert('Upload Failed', uploadError ?? 'Could not upload screenshot.');
+          infoDialog('Upload Failed', uploadError ?? 'Could not upload screenshot.');
           return;
         }
         screenshotUrl = url;
@@ -312,16 +313,16 @@ export default function BookingRequestModal({
 
       if (error) {
         if (error.includes('approval')) {
-          Alert.alert('Booking Submitted', 'Your booking will be confirmed after owner review.');
+          infoDialog('Booking Submitted', 'Your booking will be confirmed after owner review.');
           if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
           else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
           if (holdId) await releaseSlotHold(holdId);
           onSuccess(false); return;
         }
-        Alert.alert('Error', error); return;
+        infoDialog('Error', error); return;
       }
 
-      if (!request) { Alert.alert('Error', 'Could not submit request.'); return; }
+      if (!request) { infoDialog('Error', 'Could not submit request.'); return; }
 
       if (appliedSentCoupon) await markSentCouponUsed(appliedSentCoupon.id);
       else if (appliedCoupon) await incrementCouponUses(appliedCoupon.id);
@@ -330,7 +331,7 @@ export default function BookingRequestModal({
       onSuccess(autoBooked);
     } catch (err) {
       console.error('handleSubmit (staff) failed:', err);
-      Alert.alert('Error', 'Something went wrong while submitting the booking. Please try again.');
+      infoDialog('Error', 'Something went wrong while submitting the booking. Please try again.');
     } finally {
       setSubmitting(false);
       setUploading(false);
@@ -367,7 +368,7 @@ export default function BookingRequestModal({
       if (status === 'pending') {
         // Payment verified server-side, but the auto-book insert lost a race for
         // the exact slot — reverted to 'pending' for manual owner review.
-        Alert.alert(
+        infoDialog(
           'Payment Received',
           `Your ₹${advanceAmt} payment is verified and safe, but this exact slot was taken moments ago. ` +
           `Our team will confirm your booking on another slot or process a refund shortly.`,
@@ -378,7 +379,7 @@ export default function BookingRequestModal({
 
       // Rare: server hasn't finalized yet, or paymentId came back without a
       // pendingRequestId to check (shouldn't happen in the normal flow).
-      Alert.alert(
+      infoDialog(
         'Payment Received — Confirming',
         'Your payment is verified. We could not immediately confirm the slot assignment — our team will verify and confirm your booking shortly.',
       );
@@ -387,7 +388,7 @@ export default function BookingRequestModal({
       // Payment was already taken and verified server-side before this callback
       // fired — never tell the user it failed. Just reassure them it's being handled.
       console.error('finalizeCustomerBooking failed:', err);
-      Alert.alert(
+      infoDialog(
         'Payment Received — Confirming',
         'Your payment is verified. We hit a snag confirming the slot on this screen — our team will verify and confirm your booking shortly.',
       );
